@@ -3,7 +3,7 @@
   <p>给摄影工作流一键装上「整理、配对、同步」能力。</p>
   <p>把按拍摄时间重命名、RAW/JPG 配对清理、Adobe Bridge 星标与颜色标签同步，收进一个克制、安全的 macOS 图形界面。</p>
   <p>
-    <a href="LICENSE"><img src="https://img.shields.io/github/license/z865401745/xuying-photo-toolkit?style=flat-square" alt="MIT License"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/xuying-studio/xuying-photo-toolkit?style=flat-square" alt="MIT License"></a>
     <img src="https://img.shields.io/badge/macOS-11%2B-000000?style=flat-square&amp;logo=apple" alt="macOS 11+">
     <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Python 3.10+">
   </p>
@@ -71,7 +71,7 @@
 
 ### 直接使用 macOS App
 
-1. 在项目的 [Releases](https://github.com/z865401745/xuying-photo-toolkit/releases) 下载 `.dmg`。
+1. 在项目的 [Releases](https://github.com/xuying-studio/xuying-photo-toolkit/releases) 下载 `.dmg`。
 2. 打开镜像，将“旭影的摄影工具集.app”拖入“应用程序”。
 3. 打开 App，选择照片文件夹，先点击“扫描并预览”。
 
@@ -82,7 +82,7 @@
 要求：macOS 11 或更高版本、Python 3.10 或更高版本，以及系统自带的 Tkinter。
 
 ```bash
-git clone https://github.com/z865401745/xuying-photo-toolkit.git
+git clone https://github.com/xuying-studio/xuying-photo-toolkit.git
 cd xuying-photo-toolkit
 python3 -m pip install -r requirements.txt
 python3 main.py
@@ -186,7 +186,7 @@ APPLE_NOTARY_PROFILE="你的-notarytool-profile" \
 ## 🤝 贡献与反馈
 
 - 想参与开发？请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
-- 遇到错误或有功能建议？请提交 [Issue](https://github.com/z865401745/xuying-photo-toolkit/issues)。
+- 遇到错误或有功能建议？请提交 [Issue](https://github.com/xuying-studio/xuying-photo-toolkit/issues)。
 - 发现可能导致覆盖、丢失或泄露文件的问题？请按 [SECURITY.md](SECURITY.md) 的方式私密报告。
 
 请勿在 Issue 中上传真实照片、完整个人路径、废纸篓记录或含私密元数据的 EXIF/XMP 文件。
