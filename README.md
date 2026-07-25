@@ -1,18 +1,25 @@
-# 📷 旭影的摄影工具集
-
-给摄影工作流一键装上「整理、配对、同步」能力。
-
-把按拍摄时间重命名、RAW/JPG 配对清理、Adobe Bridge 星标与颜色标签同步，收进一个克制、安全的 macOS 图形界面。
-
-[![MIT License](https://img.shields.io/github/license/z865401745/xuying-photo-toolkit?style=flat-square)](LICENSE)
-![macOS 11+](https://img.shields.io/badge/macOS-11%2B-000000?style=flat-square&logo=apple)
-![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)
-
-<p align="center">
-  <img src="assets/app_icon.png" width="144" alt="旭影的摄影工具集应用图标">
-</p>
-
-[快速开始](#-快速开始) · [功能清单](#-它能做什么) · [安全机制](#-在你动手前你可能想知道) · [完整说明](docs/使用说明.md) · [从源码构建](#-从源码构建) · [贡献](CONTRIBUTING.md) · [许可证](#-许可证)
+<div align="center">
+  <h1>📷 旭影的摄影工具集</h1>
+  <p>给摄影工作流一键装上「整理、配对、同步」能力。</p>
+  <p>把按拍摄时间重命名、RAW/JPG 配对清理、Adobe Bridge 星标与颜色标签同步，收进一个克制、安全的 macOS 图形界面。</p>
+  <p>
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/z865401745/xuying-photo-toolkit?style=flat-square" alt="MIT License"></a>
+    <img src="https://img.shields.io/badge/macOS-11%2B-000000?style=flat-square&amp;logo=apple" alt="macOS 11+">
+    <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Python 3.10+">
+  </p>
+  <p>
+    <img src="assets/app_icon.png" width="144" alt="旭影的摄影工具集应用图标">
+  </p>
+  <p>
+    <a href="#-快速开始">快速开始</a> ·
+    <a href="#-它能做什么">功能清单</a> ·
+    <a href="#-在你动手前你可能想知道">安全机制</a> ·
+    <a href="docs/使用说明.md">完整说明</a> ·
+    <a href="#-从源码构建">从源码构建</a> ·
+    <a href="CONTRIBUTING.md">贡献</a> ·
+    <a href="#-许可证">许可证</a>
+  </p>
+</div>
 
 ---
 
