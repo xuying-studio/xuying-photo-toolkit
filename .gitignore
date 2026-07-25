@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 构建产物与本地发布包
+build/
+dist/
+*.spec.bak
+
+# macOS 与编辑器
+.DS_Store
+.idea/
+.vscode/
+
+# 本地照片处理记录与外观配置
+*.json.bak
+ui_config.json
