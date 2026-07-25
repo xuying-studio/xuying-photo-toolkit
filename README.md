@@ -19,6 +19,14 @@
     <a href="CONTRIBUTING.md">贡献</a> ·
     <a href="#-许可证">许可证</a>
   </p>
+  <p>
+    <a href="README.md">中文</a> ·
+    <a href="README.en.md">English</a> ·
+    <a href="README.ja.md">日本語</a> ·
+    <a href="README.es.md">Español</a> ·
+    <a href="README.ko.md">한국어</a> ·
+    <a href="README.ar.md">العربية</a>
+  </p>
 </div>
 
 ---
