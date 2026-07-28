@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import tempfile
 import tkinter as tk
+import time
 import unittest
 from pathlib import Path
 from tkinter import ttk
@@ -128,6 +129,38 @@ class GuiTests(unittest.TestCase):
             self.assertTrue(sync_page.rating_var.get())
             self.assertTrue(sync_page.label_var.get())
             self.assertEqual(app.title(), "旭影的摄影工具集")
+
+    def test_all_pages_show_determinate_total_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.make_app(Path(temp_dir) / "ui_config.json")
+            for page in app.notebook.winfo_children():
+                self.assertEqual(str(page.progress.cget("mode")), "determinate")
+                page._apply_progress(3, 10, "正在处理 3/10")
+                self.assertEqual(float(page.progress.cget("maximum")), 10)
+                self.assertEqual(float(page.progress.cget("value")), 3)
+                self.assertEqual(page.progress_text_var.get(), "3 / 10 · 30%")
+                self.assertEqual(page.status_var.get(), "正在处理 3/10")
+
+    def test_background_job_delivers_progress_to_main_thread(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.make_app(Path(temp_dir) / "ui_config.json")
+            page = app.nametowidget(app.notebook.tabs()[0])
+            completed: list[object] = []
+
+            def task(progress: gui.core.ProgressCallback) -> int:
+                progress(1, 2, "正在处理 1/2")
+                progress(2, 2, "正在处理 2/2")
+                return 7
+
+            page.run_job("准备中", task, completed.append)
+            deadline = time.monotonic() + 2
+            while page._busy and time.monotonic() < deadline:
+                app.update()
+                time.sleep(0.01)
+
+            self.assertFalse(page._busy)
+            self.assertEqual(completed, [7])
+            self.assertEqual(page.progress_text_var.get(), "2 / 2 · 100%")
 
     def test_opacity_updates_live_and_restores_next_launch(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

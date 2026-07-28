@@ -53,6 +53,7 @@ Xuying Photo Toolkit convierte el flujo en: **escanear y previsualizar → revis
 | ⭐ Sincronizar estrellas y colores | Para copiar marcas de Adobe Bridge entre RAW/JPG coincidentes | Los RAW solo reciben `.xmp`; los destinos se respaldan y pueden revertirse |
 
 Todas las páginas escanean recursivamente la carpeta seleccionada y muestran el total, el estado de las parejas y la cantidad pendiente antes de ejecutar.
+Durante el escaneo, la ejecución y el deshacer se muestran en tiempo real la cantidad actual, el total y el porcentaje completado.
 
 > No necesitas memorizar comandos y ninguna foto se modifica antes de confirmar una operación.
 

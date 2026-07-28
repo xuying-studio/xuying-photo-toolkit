@@ -55,6 +55,7 @@ Xuying Photo Toolkit turns the workflow into: **scan and preview → review the 
 | ⭐ Star and color sync | You want Adobe Bridge marks copied between matching RAW/JPG files | RAW files receive only `.xmp`; targets are backed up and reversible |
 
 Every page scans the selected folder recursively by default and shows the total photos, pair status, and actual pending count before execution.
+Scanning, execution, and undo operations all show the current count, total count, and completion percentage in real time.
 
 > No command memorization is required, and no photo is modified before you confirm an operation.
 

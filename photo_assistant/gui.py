@@ -160,13 +160,27 @@ class BasePage(ttk.Frame):
         footer.pack(fill=tk.X, pady=(14, 0))
         self.status_var = tk.StringVar(value="就绪")
         ttk.Label(footer, textvariable=self.status_var, style="Muted.TLabel").pack(side=tk.LEFT)
-        self.progress = ttk.Progressbar(footer, mode="indeterminate", length=150)
-        self.progress.pack(side=tk.RIGHT)
+        self.progress_text_var = tk.StringVar(value="0 / 0 · 0%")
+        ttk.Label(
+            footer,
+            textvariable=self.progress_text_var,
+            style="Muted.TLabel",
+        ).pack(side=tk.RIGHT)
+        self.progress = ttk.Progressbar(
+            footer,
+            mode="determinate",
+            maximum=100,
+            value=0,
+            length=200,
+        )
+        self.progress.pack(side=tk.RIGHT, padx=(0, 10))
+        self._progress_current = 0
+        self._progress_total = 0
 
     def run_job(
         self,
         status: str,
-        function: Callable[[], object],
+        function: Callable[[core.ProgressCallback], object],
         on_success: Callable[[object], None],
     ) -> None:
         """在线程中执行耗时任务，界面更新仍留在主线程。"""
@@ -175,11 +189,14 @@ class BasePage(ttk.Frame):
             return
         self._busy = True
         self.status_var.set(status)
-        self.progress.start(12)
+        self._apply_progress(0, 0, status)
 
         def worker() -> None:
+            def report_progress(current: int, total: int, message: str) -> None:
+                self._job_queue.put(("progress", (current, total, message)))
+
             try:
-                self._job_queue.put(("success", function()))
+                self._job_queue.put(("success", function(report_progress)))
             except Exception as exc:
                 self._job_queue.put(("error", exc))
 
@@ -187,20 +204,61 @@ class BasePage(ttk.Frame):
         self.after(80, lambda: self._poll_job(on_success))
 
     def _poll_job(self, on_success: Callable[[object], None]) -> None:
-        try:
-            state, payload = self._job_queue.get_nowait()
-        except queue.Empty:
+        latest_progress: tuple[int, int, str] | None = None
+        final_event: tuple[str, object] | None = None
+        while True:
+            try:
+                state, payload = self._job_queue.get_nowait()
+            except queue.Empty:
+                break
+            if state == "progress":
+                latest_progress = payload
+            else:
+                final_event = (state, payload)
+
+        if latest_progress is not None:
+            self._apply_progress(*latest_progress)
+        if final_event is None:
             self.after(80, lambda: self._poll_job(on_success))
             return
 
+        state, payload = final_event
         self._busy = False
-        self.progress.stop()
         if state == "error":
             self.status_var.set("操作失败")
             messagebox.showerror("操作失败", str(payload), parent=self)
             return
+        self._complete_progress()
         self.status_var.set("完成")
         on_success(payload)
+
+    def _apply_progress(self, current: int, total: int, message: str) -> None:
+        """在主线程中显示当前数量、总数量和完成百分比。"""
+
+        safe_total = max(0, total)
+        safe_current = min(max(0, current), safe_total) if safe_total else 0
+        self._progress_current = safe_current
+        self._progress_total = safe_total
+        self.progress.configure(maximum=max(1, safe_total), value=safe_current)
+        percent = round(safe_current / safe_total * 100) if safe_total else 0
+        self.progress_text_var.set(f"{safe_current} / {safe_total} · {percent}%")
+        if message:
+            self.status_var.set(message)
+
+    def _complete_progress(self) -> None:
+        """任务成功后把确定型进度条收束到 100%。"""
+
+        if self._progress_total:
+            self.progress.configure(
+                maximum=self._progress_total,
+                value=self._progress_total,
+            )
+            self.progress_text_var.set(
+                f"{self._progress_total} / {self._progress_total} · 100%"
+            )
+            return
+        self.progress.configure(maximum=1, value=1)
+        self.progress_text_var.set("0 / 0 · 100%")
 
     @staticmethod
     def choose_folder(variable: tk.StringVar) -> None:
@@ -374,7 +432,11 @@ class RenamePage(BasePage):
             return
         self.run_job(
             "正在读取拍摄时间并生成预览…",
-            lambda: core.build_rename_plan(folder, recursive=True),
+            lambda progress: core.build_rename_plan(
+                folder,
+                recursive=True,
+                progress=progress,
+            ),
             self._show_plan,
         )
 
@@ -434,7 +496,7 @@ class RenamePage(BasePage):
         plan = self.plan
         self.run_job(
             "正在安全重命名…",
-            lambda: core.execute_rename_plan(plan),
+            lambda progress: core.execute_rename_plan(plan, progress=progress),
             self._rename_finished,
         )
 
@@ -459,7 +521,7 @@ class RenamePage(BasePage):
             return
         self.run_job(
             "正在撤回重命名…",
-            core.undo_latest_rename,
+            lambda progress: core.undo_latest_rename(progress=progress),
             lambda value: messagebox.showinfo(
                 "撤回完成",
                 f"已恢复 {value} 个文件。",
@@ -556,7 +618,12 @@ class CleanupPage(BasePage):
         kind = self.kind_var.get()
         self.run_job(
             f"正在查找没有配对的 {kind}…",
-            lambda: core.scan_cleanup(folder, kind, recursive=True),
+            lambda progress: core.scan_cleanup(
+                folder,
+                kind,
+                recursive=True,
+                progress=progress,
+            ),
             self._show_items,
         )
 
@@ -599,7 +666,10 @@ class CleanupPage(BasePage):
         items = self.items.copy()
         self.run_job(
             "正在移入废纸篓…",
-            lambda: core.move_cleanup_items_to_trash(items),
+            lambda progress: core.move_cleanup_items_to_trash(
+                items,
+                progress=progress,
+            ),
             self._cleanup_finished,
         )
 
@@ -623,7 +693,7 @@ class CleanupPage(BasePage):
             return
         self.run_job(
             "正在从废纸篓恢复…",
-            core.restore_latest_cleanup,
+            lambda progress: core.restore_latest_cleanup(progress=progress),
             self._restore_finished,
         )
 
@@ -735,12 +805,13 @@ class SyncPage(BasePage):
         sync_label = self.label_var.get()
         self.run_job(
             "正在读取 XMP 标记并生成预览…",
-            lambda: core.scan_sync(
+            lambda progress: core.scan_sync(
                 folder,
                 direction,
                 sync_rating,
                 sync_label,
                 recursive=True,
+                progress=progress,
             ),
             self._show_operations,
         )
@@ -796,7 +867,10 @@ class SyncPage(BasePage):
         operations = self.operations.copy()
         self.run_job(
             "正在备份并同步 XMP 标记…",
-            lambda: core.execute_sync_plan(operations),
+            lambda progress: core.execute_sync_plan(
+                operations,
+                progress=progress,
+            ),
             self._sync_finished,
         )
 
@@ -820,7 +894,7 @@ class SyncPage(BasePage):
             return
         self.run_job(
             "正在恢复 XMP 备份…",
-            core.undo_latest_sync,
+            lambda progress: core.undo_latest_sync(progress=progress),
             lambda value: messagebox.showinfo(
                 "撤回完成",
                 f"已恢复 {value} 个目标文件。",

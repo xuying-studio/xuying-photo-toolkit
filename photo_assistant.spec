@@ -46,8 +46,8 @@ app = BUNDLE(
     info_plist={
         "CFBundleDisplayName": app_name,
         "CFBundleName": app_name,
-        "CFBundleShortVersionString": "1.0.4",
-        "CFBundleVersion": "5",
+        "CFBundleShortVersionString": "1.0.5",
+        "CFBundleVersion": "6",
         "LSMinimumSystemVersion": "11.0",
         "NSHighResolutionCapable": True,
         "NSAppleEventsUsageDescription": "恢复清理文件时，需要通过 Finder 将文件从废纸篓移回原文件夹。",

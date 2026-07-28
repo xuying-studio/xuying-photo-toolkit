@@ -17,7 +17,7 @@ import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 import exifread
 from send2trash import send2trash
@@ -49,6 +49,20 @@ RE_RATING_ELEM = re.compile(rb"<xmp:Rating>([0-5])</xmp:Rating>")
 RE_LABEL_ATTR = re.compile(rb'xmp:Label\s*=\s*"([^"]*)"')
 RE_LABEL_ELEM = re.compile(rb"<xmp:Label>([^<]*)</xmp:Label>")
 XMP_JPEG_HEADER = b"http://ns.adobe.com/xap/1.0/\x00"
+
+ProgressCallback = Callable[[int, int, str], None]
+
+
+def _report_progress(
+    callback: ProgressCallback | None,
+    current: int,
+    total: int,
+    message: str,
+) -> None:
+    """向界面报告当前进度；未提供回调时保持原有调用方式。"""
+
+    if callback is not None:
+        callback(max(0, current), max(0, total), message)
 
 
 @dataclass(frozen=True)
@@ -200,17 +214,24 @@ def _find_sidecars(image_path: Path) -> list[Path]:
         return []
 
 
-def build_rename_plan(folder: str | Path, recursive: bool = True) -> RenamePlan:
+def build_rename_plan(
+    folder: str | Path,
+    recursive: bool = True,
+    progress: ProgressCallback | None = None,
+) -> RenamePlan:
     """生成照片与对应 XMP 侧车的安全重命名计划。"""
 
     files = iter_image_files(folder, recursive)
     groups: dict[tuple[str, str], list[Path]] = {}
+    capture_times: dict[tuple[str, str], datetime] = {}
     warnings: list[str] = []
     existing_counters: dict[str, int] = {}
     already_named_count = 0
     skipped_count = 0
+    total_files = len(files)
+    _report_progress(progress, 0, total_files, f"正在读取照片信息 0/{total_files}")
 
-    for path in files:
+    for index, path in enumerate(files, start=1):
         renamed_match = RENAMED_STEM_RE.match(path.stem)
         if renamed_match:
             already_named_count += 1
@@ -219,18 +240,27 @@ def build_rename_plan(folder: str | Path, recursive: bool = True) -> RenamePlan:
                 existing_counters.get(date_text, 0),
                 int(renamed_match.group("counter")),
             )
-            continue
-        number = extract_original_number(path.name)
-        if number is None:
-            skipped_count += 1
-            warnings.append(f"未找到原始编号，已跳过：{path}")
-            continue
-        groups.setdefault((str(path.parent).casefold(), number), []).append(path)
+        else:
+            number = extract_original_number(path.name)
+            if number is None:
+                skipped_count += 1
+                warnings.append(f"未找到原始编号，已跳过：{path}")
+            else:
+                key = (str(path.parent).casefold(), number)
+                groups.setdefault(key, []).append(path)
+                capture_time = get_capture_time(path)
+                if key not in capture_times or capture_time < capture_times[key]:
+                    capture_times[key] = capture_time
+        _report_progress(
+            progress,
+            index,
+            total_files,
+            f"正在读取拍摄时间 {index}/{total_files}",
+        )
 
     ordered_groups: list[tuple[datetime, str, list[Path]]] = []
-    for (_, number), members in groups.items():
-        capture_time = min(get_capture_time(path) for path in members)
-        ordered_groups.append((capture_time, number, members))
+    for key, members in groups.items():
+        ordered_groups.append((capture_times[key], key[1], members))
     ordered_groups.sort(key=lambda item: (item[0], item[1], str(item[2][0]).casefold()))
 
     operations: list[RenameOperation] = []
@@ -275,6 +305,7 @@ def build_rename_plan(folder: str | Path, recursive: bool = True) -> RenamePlan:
         skipped_count=skipped_count,
         xmp_count=sum(operation.kind == "XMP 侧车" for operation in operations),
     )
+    _report_progress(progress, total_files, total_files, f"扫描完成 {total_files}/{total_files}")
     return RenamePlan(operations, image_count, conflicts, warnings, stats)
 
 
@@ -293,7 +324,10 @@ def _find_rename_conflicts(operations: list[RenameOperation]) -> list[str]:
     return conflicts
 
 
-def _run_two_phase_rename(pairs: list[tuple[Path, Path]]) -> None:
+def _run_two_phase_rename(
+    pairs: list[tuple[Path, Path]],
+    progress: ProgressCallback | None = None,
+) -> None:
     """使用临时文件名完成事务式重命名，失败时尽力回滚。"""
 
     active = [(source, target) for source, target in pairs if source != target]
@@ -310,14 +344,28 @@ def _run_two_phase_rename(pairs: list[tuple[Path, Path]]) -> None:
 
     staged: list[tuple[Path, Path, Path]] = []
     completed: list[tuple[Path, Path]] = []
+    total_steps = len(active) * 2
+    _report_progress(progress, 0, total_steps, f"正在准备文件 0/{len(active)}")
     try:
-        for source, target in active:
+        for index, (source, target) in enumerate(active, start=1):
             temporary = source.with_name(f".{source.name}.photo-assistant-{uuid.uuid4().hex}.tmp")
             source.rename(temporary)
             staged.append((source, temporary, target))
-        for source, temporary, target in staged:
+            _report_progress(
+                progress,
+                index,
+                total_steps,
+                f"正在准备文件 {index}/{len(active)}",
+            )
+        for index, (source, temporary, target) in enumerate(staged, start=1):
             temporary.rename(target)
             completed.append((source, target))
+            _report_progress(
+                progress,
+                len(active) + index,
+                total_steps,
+                f"正在写入新名称 {index}/{len(active)}",
+            )
     except Exception:
         for source, target in reversed(completed):
             if target.exists() and not source.exists():
@@ -328,7 +376,10 @@ def _run_two_phase_rename(pairs: list[tuple[Path, Path]]) -> None:
         raise
 
 
-def execute_rename_plan(plan: RenamePlan) -> Path:
+def execute_rename_plan(
+    plan: RenamePlan,
+    progress: ProgressCallback | None = None,
+) -> Path:
     """执行重命名计划，并返回撤回清单路径。"""
 
     if plan.conflicts:
@@ -346,7 +397,8 @@ def execute_rename_plan(plan: RenamePlan) -> Path:
     backup_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     try:
         _run_two_phase_rename(
-            [(Path(op.source), Path(op.target)) for op in plan.operations]
+            [(Path(op.source), Path(op.target)) for op in plan.operations],
+            progress,
         )
     except Exception:
         backup_path.unlink(missing_ok=True)
@@ -359,7 +411,7 @@ def _latest_json(folder: Path) -> Path | None:
     return files[0] if files else None
 
 
-def undo_latest_rename() -> int:
+def undo_latest_rename(progress: ProgressCallback | None = None) -> int:
     """撤回最近一次重命名，返回恢复的文件数量。"""
 
     backup_path = _latest_json(RENAME_BACKUP_DIR)
@@ -371,7 +423,7 @@ def undo_latest_rename() -> int:
         (Path(item["target"]), Path(item["source"]))
         for item in operations
     ]
-    _run_two_phase_rename(reversed_pairs)
+    _run_two_phase_rename(reversed_pairs, progress)
     backup_path.unlink()
     return len(reversed_pairs)
 
@@ -380,6 +432,7 @@ def scan_cleanup(
     folder: str | Path,
     delete_kind: str,
     recursive: bool = True,
+    progress: ProgressCallback | None = None,
 ) -> CleanupScanResult:
     """扫描配对情况并返回待清理项目与统计信息。"""
 
@@ -392,20 +445,34 @@ def scan_cleanup(
 
     by_folder: dict[Path, dict[str, set[str]]] = {}
     all_files = iter_image_files(folder, recursive)
-    for path in all_files:
+    total_files = len(all_files)
+    total_steps = total_files * 2
+    _report_progress(progress, 0, total_steps, f"正在建立照片索引 0/{total_files}")
+    for index, path in enumerate(all_files, start=1):
         ext = path.suffix.lower()
         by_folder.setdefault(path.parent, {}).setdefault(path.stem.casefold(), set()).add(ext)
+        _report_progress(
+            progress,
+            index,
+            total_steps,
+            f"正在建立照片索引 {index}/{total_files}",
+        )
 
     result: list[CleanupItem] = []
     target_count = 0
-    for path in all_files:
+    for index, path in enumerate(all_files, start=1):
         ext = path.suffix.lower()
-        if ext not in target_exts:
-            continue
-        target_count += 1
-        sibling_exts = by_folder.get(path.parent, {}).get(path.stem.casefold(), set())
-        if sibling_exts.isdisjoint(pair_exts):
-            result.append(CleanupItem(str(path), missing_label))
+        if ext in target_exts:
+            target_count += 1
+            sibling_exts = by_folder.get(path.parent, {}).get(path.stem.casefold(), set())
+            if sibling_exts.isdisjoint(pair_exts):
+                result.append(CleanupItem(str(path), missing_label))
+        _report_progress(
+            progress,
+            total_files + index,
+            total_steps,
+            f"正在检查照片配对 {index}/{total_files}",
+        )
     result.sort(key=lambda item: item.path.casefold())
     return CleanupScanResult(
         items=result,
@@ -421,15 +488,21 @@ def build_cleanup_plan(
     folder: str | Path,
     delete_kind: str,
     recursive: bool = True,
+    progress: ProgressCallback | None = None,
 ) -> list[CleanupItem]:
     """兼容旧调用：只返回待清理项目列表。"""
 
-    return scan_cleanup(folder, delete_kind, recursive).items
+    return scan_cleanup(folder, delete_kind, recursive, progress).items
 
 
-def move_cleanup_items_to_trash(items: list[CleanupItem]) -> tuple[int, list[str]]:
+def move_cleanup_items_to_trash(
+    items: list[CleanupItem],
+    progress: ProgressCallback | None = None,
+) -> tuple[int, list[str]]:
     """将清理项移入废纸篓，并保存可恢复记录。"""
 
+    total_items = len(items)
+    _report_progress(progress, 0, total_items, f"正在准备清理 0/{total_items}")
     if not items:
         return 0, []
     _ensure_support_dirs()
@@ -442,7 +515,7 @@ def move_cleanup_items_to_trash(items: list[CleanupItem]) -> tuple[int, list[str
     session_id = datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
     recovery_root = common_root / RECOVERY_DIR_NAME / session_id
 
-    for item in items:
+    for index, item in enumerate(items, start=1):
         recovery_path: Path | None = None
         try:
             source = Path(item.path)
@@ -482,6 +555,12 @@ def move_cleanup_items_to_trash(items: list[CleanupItem]) -> tuple[int, list[str
                 recovery_path.unlink(missing_ok=True)
                 _remove_empty_recovery_dirs(recovery_path.parent)
             errors.append(f"{item.path}：{exc}")
+        _report_progress(
+            progress,
+            index,
+            total_items,
+            f"正在移入废纸篓 {index}/{total_items}",
+        )
     if moved:
         payload = {
             "created_at": datetime.now().isoformat(),
@@ -604,7 +683,9 @@ def _remove_empty_recovery_dirs(start: Path) -> None:
         current = current.parent
 
 
-def restore_latest_cleanup() -> tuple[int, list[str]]:
+def restore_latest_cleanup(
+    progress: ProgressCallback | None = None,
+) -> tuple[int, list[str]]:
     """通过 Finder 尝试恢复最近一次移入废纸篓的文件。"""
 
     if not CLEANUP_UNDO_FILE.exists():
@@ -618,14 +699,28 @@ def restore_latest_cleanup() -> tuple[int, list[str]]:
         records = [{"original_path": path} for path in data.get("paths", [])]
     restored = 0
     errors: list[str] = []
+    total_records = len(records)
+    _report_progress(progress, 0, total_records, f"正在准备恢复 0/{total_records}")
 
-    for record in records:
+    for index, record in enumerate(records, start=1):
         original = Path(record["original_path"])
         if original.exists():
             errors.append(f"原位置已有同名文件，未覆盖：{original.name}")
+            _report_progress(
+                progress,
+                index,
+                total_records,
+                f"正在恢复文件 {index}/{total_records}",
+            )
             continue
         if not original.parent.is_dir():
             errors.append(f"原文件夹不存在：{original.parent}")
+            _report_progress(
+                progress,
+                index,
+                total_records,
+                f"正在恢复文件 {index}/{total_records}",
+            )
             continue
 
         recovery_path_value = record.get("recovery_path")
@@ -635,9 +730,21 @@ def restore_latest_cleanup() -> tuple[int, list[str]]:
                 shutil.move(str(recovery_path), str(original))
                 _remove_empty_recovery_dirs(recovery_path.parent)
                 restored += 1
+                _report_progress(
+                    progress,
+                    index,
+                    total_records,
+                    f"正在恢复文件 {index}/{total_records}",
+                )
                 continue
             except Exception as exc:
                 errors.append(f"{original.name}：安全备份恢复失败：{exc}")
+                _report_progress(
+                    progress,
+                    index,
+                    total_records,
+                    f"正在恢复文件 {index}/{total_records}",
+                )
                 continue
 
         trash_path_value = record.get("trash_path")
@@ -657,6 +764,12 @@ def restore_latest_cleanup() -> tuple[int, list[str]]:
             try:
                 shutil.move(str(trash_path), str(original))
                 restored += 1
+                _report_progress(
+                    progress,
+                    index,
+                    total_records,
+                    f"正在恢复文件 {index}/{total_records}",
+                )
                 continue
             except Exception:
                 # 直接访问可能被 macOS 隐私权限阻止，继续交给 Finder。
@@ -667,6 +780,12 @@ def restore_latest_cleanup() -> tuple[int, list[str]]:
             restored += 1
         else:
             errors.append(f"{original.name}：{detail}")
+        _report_progress(
+            progress,
+            index,
+            total_records,
+            f"正在恢复文件 {index}/{total_records}",
+        )
 
     if restored == len(records):
         CLEANUP_UNDO_FILE.unlink(missing_ok=True)
@@ -750,6 +869,7 @@ def scan_sync(
     sync_rating: bool,
     sync_label: bool,
     recursive: bool = True,
+    progress: ProgressCallback | None = None,
 ) -> SyncScanResult:
     """扫描 XMP 标记并返回同步计划与统计信息。"""
 
@@ -763,42 +883,46 @@ def scan_sync(
     target_is_raw = direction == "JPG → RAW"
     result: list[SyncOperation] = []
     files = iter_image_files(folder, recursive)
-    source_count = sum(path.suffix.lower() in source_exts for path in files)
+    sources = [path for path in files if path.suffix.lower() in source_exts]
+    source_count = len(sources)
     target_count = sum(path.suffix.lower() in target_exts for path in files)
     matched_count = 0
     marked_count = 0
     up_to_date_count = 0
+    _report_progress(progress, 0, source_count, f"正在读取 XMP 标记 0/{source_count}")
 
-    for source in files:
-        if source.suffix.lower() not in source_exts:
-            continue
+    for index, source in enumerate(sources, start=1):
         target = _pair_for(source, target_exts)
-        if target is None:
-            continue
-        matched_count += 1
-        rating, label = read_xmp_properties(source)
-        if not ((sync_rating and rating > 0) or (sync_label and label)):
-            continue
-        marked_count += 1
-        old_rating, old_label = read_xmp_properties(target)
-        new_rating = rating if sync_rating and rating > 0 else None
-        new_label = label if sync_label and label else None
-        rating_changed = new_rating is not None and new_rating != old_rating
-        label_changed = new_label is not None and new_label != old_label
-        if rating_changed or label_changed:
-            result.append(
-                SyncOperation(
-                    str(source),
-                    str(target),
-                    target_is_raw,
-                    new_rating,
-                    new_label,
-                    old_rating,
-                    old_label,
-                )
-            )
-        else:
-            up_to_date_count += 1
+        if target is not None:
+            matched_count += 1
+            rating, label = read_xmp_properties(source)
+            if (sync_rating and rating > 0) or (sync_label and label):
+                marked_count += 1
+                old_rating, old_label = read_xmp_properties(target)
+                new_rating = rating if sync_rating and rating > 0 else None
+                new_label = label if sync_label and label else None
+                rating_changed = new_rating is not None and new_rating != old_rating
+                label_changed = new_label is not None and new_label != old_label
+                if rating_changed or label_changed:
+                    result.append(
+                        SyncOperation(
+                            str(source),
+                            str(target),
+                            target_is_raw,
+                            new_rating,
+                            new_label,
+                            old_rating,
+                            old_label,
+                        )
+                    )
+                else:
+                    up_to_date_count += 1
+        _report_progress(
+            progress,
+            index,
+            source_count,
+            f"正在读取 XMP 标记 {index}/{source_count}",
+        )
     return SyncScanResult(
         operations=result,
         total_images=len(files),
@@ -816,6 +940,7 @@ def build_sync_plan(
     sync_rating: bool,
     sync_label: bool,
     recursive: bool = True,
+    progress: ProgressCallback | None = None,
 ) -> list[SyncOperation]:
     """兼容旧调用：只返回待同步操作列表。"""
 
@@ -825,6 +950,7 @@ def build_sync_plan(
         sync_rating,
         sync_label,
         recursive,
+        progress,
     ).operations
 
 
@@ -933,7 +1059,10 @@ def _write_properties(path: Path, rating: int | None, label: str | None) -> None
         temporary.replace(path)
 
 
-def execute_sync_plan(operations: list[SyncOperation]) -> tuple[int, Path]:
+def execute_sync_plan(
+    operations: list[SyncOperation],
+    progress: ProgressCallback | None = None,
+) -> tuple[int, Path]:
     """备份目标文件后执行 XMP 同步。"""
 
     if not operations:
@@ -944,6 +1073,9 @@ def execute_sync_plan(operations: list[SyncOperation]) -> tuple[int, Path]:
     )
     session_dir.mkdir(parents=True)
     manifest_entries: list[dict] = []
+    total_operations = len(operations)
+    total_steps = total_operations * 2
+    _report_progress(progress, 0, total_steps, f"正在备份目标文件 0/{total_operations}")
 
     for index, operation in enumerate(operations):
         target = Path(operation.target)
@@ -964,6 +1096,12 @@ def execute_sync_plan(operations: list[SyncOperation]) -> tuple[int, Path]:
             shutil.copy2(target, session_dir / backup_name)
             entry["backup_name"] = backup_name
         manifest_entries.append(entry)
+        _report_progress(
+            progress,
+            index + 1,
+            total_steps,
+            f"正在备份目标文件 {index + 1}/{total_operations}",
+        )
 
     manifest_path = session_dir / "manifest.json"
     manifest_path.write_text(
@@ -981,9 +1119,15 @@ def execute_sync_plan(operations: list[SyncOperation]) -> tuple[int, Path]:
 
     succeeded = 0
     try:
-        for operation in operations:
+        for index, operation in enumerate(operations, start=1):
             _write_properties(Path(operation.target), operation.rating, operation.label)
             succeeded += 1
+            _report_progress(
+                progress,
+                total_operations + index,
+                total_steps,
+                f"正在写入 XMP 标记 {index}/{total_operations}",
+            )
     except Exception:
         # 任一文件失败时立即恢复本批次，避免留下半完成状态。
         _restore_sync_manifest(manifest_path, mark_undone=True)
@@ -1004,22 +1148,28 @@ def _latest_active_sync_manifest() -> Path | None:
     return None
 
 
-def undo_latest_sync() -> int:
+def undo_latest_sync(progress: ProgressCallback | None = None) -> int:
     """从完整备份中恢复最近一次 XMP 同步。"""
 
     manifest_path = _latest_active_sync_manifest()
     if manifest_path is None:
         raise FileNotFoundError("没有可撤回的同步记录。")
-    return _restore_sync_manifest(manifest_path, mark_undone=True)
+    return _restore_sync_manifest(manifest_path, mark_undone=True, progress=progress)
 
 
-def _restore_sync_manifest(manifest_path: Path, mark_undone: bool) -> int:
+def _restore_sync_manifest(
+    manifest_path: Path,
+    mark_undone: bool,
+    progress: ProgressCallback | None = None,
+) -> int:
     """按清单恢复一次同步使用的完整备份。"""
 
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     entries = data.get("entries", [])
     restored = 0
-    for entry in entries:
+    total_entries = len(entries)
+    _report_progress(progress, 0, total_entries, f"正在恢复 XMP 备份 0/{total_entries}")
+    for index, entry in enumerate(entries, start=1):
         target = Path(entry["target"])
         backup_name = entry.get("backup_name")
         if entry.get("target_is_raw"):
@@ -1032,6 +1182,12 @@ def _restore_sync_manifest(manifest_path: Path, mark_undone: bool) -> int:
         elif backup_name:
             shutil.copy2(manifest_path.parent / str(backup_name), target)
             restored += 1
+        _report_progress(
+            progress,
+            index,
+            total_entries,
+            f"正在恢复 XMP 备份 {index}/{total_entries}",
+        )
     if mark_undone:
         data["undone_at"] = datetime.now().isoformat()
         manifest_path.write_text(

@@ -16,6 +16,19 @@ from photo_assistant import core
 MINIMAL_JPEG = b"\xff\xd8\xff\xd9"
 
 
+def assert_progress_complete(
+    test_case: unittest.TestCase,
+    updates: list[tuple[int, int, str]],
+) -> None:
+    """确认任务持续上报进度，并在总量位置结束。"""
+
+    test_case.assertTrue(updates)
+    current, total, message = updates[-1]
+    test_case.assertGreater(total, 0)
+    test_case.assertEqual(current, total)
+    test_case.assertTrue(message)
+
+
 class RenameTests(unittest.TestCase):
     def test_rename_raw_jpg_and_sidecar_then_undo(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -36,21 +49,35 @@ class RenameTests(unittest.TestCase):
                 "APP_SUPPORT_DIR",
                 root,
             ), mock.patch.object(core, "XMP_BACKUP_DIR", root / "xmp"):
-                plan = core.build_rename_plan(root)
+                scan_updates: list[tuple[int, int, str]] = []
+                execute_updates: list[tuple[int, int, str]] = []
+                undo_updates: list[tuple[int, int, str]] = []
+                plan = core.build_rename_plan(
+                    root,
+                    progress=lambda *update: scan_updates.append(update),
+                )
                 self.assertEqual(plan.image_count, 2)
                 self.assertFalse(plan.conflicts)
                 self.assertEqual(plan.stats.total_images, 2)
                 self.assertEqual(plan.stats.raw_count, 1)
                 self.assertEqual(plan.stats.jpg_count, 1)
                 self.assertEqual(plan.stats.xmp_count, 1)
-                core.execute_rename_plan(plan)
+                assert_progress_complete(self, scan_updates)
+                core.execute_rename_plan(
+                    plan,
+                    progress=lambda *update: execute_updates.append(update),
+                )
+                assert_progress_complete(self, execute_updates)
 
                 self.assertTrue((root / "DSC26-07-25-00001.arw").exists())
                 self.assertTrue((root / "DSC26-07-25-00001.jpg").exists())
                 self.assertTrue((root / "DSC26-07-25-00001.xmp").exists())
 
-                restored = core.undo_latest_rename()
+                restored = core.undo_latest_rename(
+                    progress=lambda *update: undo_updates.append(update),
+                )
                 self.assertEqual(restored, 3)
+                assert_progress_complete(self, undo_updates)
                 self.assertTrue(raw.exists())
                 self.assertTrue(jpg.exists())
                 self.assertTrue(sidecar.exists())
@@ -85,13 +112,20 @@ class CleanupTests(unittest.TestCase):
 
             plan = core.build_cleanup_plan(root, "JPG", recursive=True)
             self.assertEqual([Path(item.path).name for item in plan], [orphan.name])
-            result = core.scan_cleanup(root, "JPG", recursive=True)
+            scan_updates: list[tuple[int, int, str]] = []
+            result = core.scan_cleanup(
+                root,
+                "JPG",
+                recursive=True,
+                progress=lambda *update: scan_updates.append(update),
+            )
             self.assertEqual(result.total_images, 3)
             self.assertEqual(result.raw_count, 1)
             self.assertEqual(result.jpg_count, 2)
             self.assertEqual(result.target_count, 2)
             self.assertEqual(result.paired_target_count, 1)
             self.assertEqual(len(result.items), 1)
+            assert_progress_complete(self, scan_updates)
 
     def test_restore_uses_recorded_trash_path(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -167,21 +201,28 @@ class CleanupTests(unittest.TestCase):
                 "_trash_dir_for_path",
                 return_value=fake_trash,
             ):
+                execute_updates: list[tuple[int, int, str]] = []
+                restore_updates: list[tuple[int, int, str]] = []
                 moved, errors = core.move_cleanup_items_to_trash(
-                    [core.CleanupItem(str(photo), "RAW")]
+                    [core.CleanupItem(str(photo), "RAW")],
+                    progress=lambda *update: execute_updates.append(update),
                 )
                 self.assertEqual(moved, 1)
                 self.assertFalse(errors)
                 self.assertFalse(photo.exists())
+                assert_progress_complete(self, execute_updates)
 
                 payload = json.loads(undo_file.read_text(encoding="utf-8"))
                 recovery_path = Path(payload["items"][0]["recovery_path"])
                 self.assertTrue(recovery_path.exists())
 
-                restored, restore_errors = core.restore_latest_cleanup()
+                restored, restore_errors = core.restore_latest_cleanup(
+                    progress=lambda *update: restore_updates.append(update),
+                )
 
             self.assertEqual(restored, 1)
             self.assertFalse(restore_errors)
+            assert_progress_complete(self, restore_updates)
             self.assertTrue(photo.exists())
             self.assertEqual(photo.read_bytes(), MINIMAL_JPEG)
             self.assertTrue((fake_trash / photo.name).exists())
@@ -233,15 +274,32 @@ class XmpTests(unittest.TestCase):
                 "RENAME_BACKUP_DIR",
                 support / "rename",
             ), mock.patch.object(core, "XMP_BACKUP_DIR", xmp_backups):
-                plan = core.build_sync_plan(root, "JPG → RAW", True, True)
+                scan_updates: list[tuple[int, int, str]] = []
+                execute_updates: list[tuple[int, int, str]] = []
+                undo_updates: list[tuple[int, int, str]] = []
+                plan = core.build_sync_plan(
+                    root,
+                    "JPG → RAW",
+                    True,
+                    True,
+                    progress=lambda *update: scan_updates.append(update),
+                )
                 self.assertEqual(len(plan), 1)
-                count, manifest = core.execute_sync_plan(plan)
+                assert_progress_complete(self, scan_updates)
+                count, manifest = core.execute_sync_plan(
+                    plan,
+                    progress=lambda *update: execute_updates.append(update),
+                )
                 self.assertEqual(count, 1)
+                assert_progress_complete(self, execute_updates)
                 self.assertTrue(manifest.exists())
                 self.assertEqual(core.read_xmp_properties(raw), (5, "Approved"))
 
-                restored = core.undo_latest_sync()
+                restored = core.undo_latest_sync(
+                    progress=lambda *update: undo_updates.append(update),
+                )
                 self.assertEqual(restored, 1)
+                assert_progress_complete(self, undo_updates)
                 self.assertFalse(raw.with_suffix(".xmp").exists())
 
     def test_sync_manifest_contains_full_jpeg_backup(self) -> None:
