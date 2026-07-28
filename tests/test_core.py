@@ -63,6 +63,12 @@ class RenameTests(unittest.TestCase):
                 self.assertEqual(plan.stats.jpg_count, 1)
                 self.assertEqual(plan.stats.xmp_count, 1)
                 assert_progress_complete(self, scan_updates)
+                self.assertTrue(
+                    all(current < total for current, total, _ in scan_updates[:-1])
+                )
+                self.assertTrue(
+                    any("正在生成重命名预览" in message for _, _, message in scan_updates)
+                )
                 core.execute_rename_plan(
                     plan,
                     progress=lambda *update: execute_updates.append(update),

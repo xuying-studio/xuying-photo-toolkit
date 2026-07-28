@@ -10,7 +10,10 @@ a = Analysis(
     ["main.py"],
     pathex=[str(project_dir)],
     binaries=[],
-    datas=[(str(project_dir / "assets" / "app_icon.png"), "assets")],
+    datas=[
+        (str(project_dir / "assets" / "app_icon.png"), "assets"),
+        (str(project_dir / "assets" / "app_icon_header.png"), "assets"),
+    ],
     hiddenimports=["exifread", "send2trash"],
     hookspath=[],
     hooksconfig={},
@@ -46,8 +49,8 @@ app = BUNDLE(
     info_plist={
         "CFBundleDisplayName": app_name,
         "CFBundleName": app_name,
-        "CFBundleShortVersionString": "1.0.5",
-        "CFBundleVersion": "6",
+        "CFBundleShortVersionString": "1.0.10",
+        "CFBundleVersion": "11",
         "LSMinimumSystemVersion": "11.0",
         "NSHighResolutionCapable": True,
         "NSAppleEventsUsageDescription": "恢复清理文件时，需要通过 Finder 将文件从废纸篓移回原文件夹。",

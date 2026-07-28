@@ -10,6 +10,7 @@ import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+from tkinter import font as tkfont
 from typing import Callable
 
 from . import __version__
@@ -19,6 +20,7 @@ from . import core
 WINDOW_TITLE = "旭影的摄影工具集"
 LEGACY_WINDOW_TITLE = "摄影文件后期处理助手"
 MAX_PREVIEW_ROWS = 1000
+MAX_ACTIVITY_ROWS = 300
 DEFAULT_OPACITY = 92
 MIN_OPACITY = 70
 MAX_OPACITY = 100
@@ -38,38 +40,575 @@ LEGACY_UI_CONFIG_FILE = (
 )
 
 LIGHT_PALETTE = {
-    "window": "#E9ECF1",
-    "chrome": "#F4F5F7",
-    "surface": "#F7F8FA",
-    "panel": "#FCFCFD",
-    "panel_alt": "#F1F3F6",
-    "border": "#D9DDE5",
-    "text": "#1D1D1F",
-    "secondary": "#6E6E73",
-    "tertiary": "#8E8E93",
-    "accent": "#3978D3",
-    "accent_active": "#2866BE",
-    "danger": "#B85C66",
-    "danger_active": "#A44C56",
-    "selection": "#DCE9FA",
+    "window": "#E8EBF0",
+    "chrome": "#F8F9FB",
+    "surface": "#F3F4F7",
+    "panel": "#FBFCFD",
+    "panel_alt": "#ECEFF3",
+    "border": "#D7DBE2",
+    "table_grid": "#C7CCD4",
+    "text": "#202124",
+    "secondary": "#686D76",
+    "tertiary": "#90959E",
+    "accent": "#0A7AF4",
+    "accent_active": "#0069DC",
+    "accent_soft": "#E3F0FF",
+    "danger": "#C34852",
+    "danger_active": "#A93A44",
+    "danger_soft": "#F9EAEC",
+    "selection": "#E4F0FF",
 }
 
 DARK_PALETTE = {
-    "window": "#1B1B1D",
-    "chrome": "#242426",
-    "surface": "#202124",
-    "panel": "#2A2A2D",
-    "panel_alt": "#303034",
-    "border": "#414145",
-    "text": "#F5F5F7",
-    "secondary": "#B2B2B7",
-    "tertiary": "#8E8E93",
-    "accent": "#6AA9F4",
-    "accent_active": "#82B8F7",
-    "danger": "#D27A83",
-    "danger_active": "#DF8C94",
-    "selection": "#304865",
+    "window": "#16171A",
+    "chrome": "#24252A",
+    "surface": "#202125",
+    "panel": "#2D2E33",
+    "panel_alt": "#36373D",
+    "border": "#44464D",
+    "table_grid": "#555861",
+    "text": "#F4F4F6",
+    "secondary": "#B4B7BF",
+    "tertiary": "#858992",
+    "accent": "#409CFF",
+    "accent_active": "#64ADFF",
+    "accent_soft": "#233F5E",
+    "danger": "#E07A84",
+    "danger_active": "#EE929A",
+    "danger_soft": "#3C292E",
+    "selection": "#233F5E",
 }
+
+
+def _display_filename(value: str | Path) -> str:
+    """仅返回表格展示需要的文件名，内部路径保持不变。"""
+
+    return Path(value).name or str(value)
+
+
+def _rounded_points(width: int, height: int, radius: int) -> list[int]:
+    """返回 Canvas 平滑圆角矩形使用的控制点。"""
+
+    safe_width = max(2, width)
+    safe_height = max(2, height)
+    safe_radius = min(radius, safe_width // 2, safe_height // 2)
+    return [
+        safe_radius,
+        1,
+        safe_width - safe_radius,
+        1,
+        safe_width - 1,
+        1,
+        safe_width - 1,
+        safe_radius,
+        safe_width - 1,
+        safe_height - safe_radius,
+        safe_width - 1,
+        safe_height - 1,
+        safe_width - safe_radius,
+        safe_height - 1,
+        safe_radius,
+        safe_height - 1,
+        1,
+        safe_height - 1,
+        1,
+        safe_height - safe_radius,
+        1,
+        safe_radius,
+        1,
+        1,
+    ]
+
+
+class RoundedButton(tk.Canvas):
+    """带悬停、按下、聚焦和禁用状态的圆角按钮。"""
+
+    def __init__(
+        self,
+        master: tk.Misc,
+        *,
+        text: str,
+        command: Callable[[], object],
+        palette: dict[str, str],
+        font: tuple[str, int] | tuple[str, int, str],
+        role: str = "secondary",
+        width: int | None = None,
+        height: int = 38,
+        radius: int = 11,
+        background: str | None = None,
+    ) -> None:
+        self._text = text
+        self._command = command
+        self._palette = palette
+        self._font = font
+        self._role = role
+        self._selected = False
+        self._state = tk.NORMAL
+        self._hovered = False
+        self._pressed = False
+        self._focused = False
+        self._radius = radius
+        measured = tkfont.Font(master=master, font=font).measure(text)
+        requested_width = width or max(88, measured + 32)
+        parent_background = background or str(master.cget("background"))
+        super().__init__(
+            master,
+            width=requested_width,
+            height=height,
+            background=parent_background,
+            highlightthickness=0,
+            borderwidth=0,
+            takefocus=1,
+            cursor="pointinghand",
+        )
+        self.bind("<Configure>", self._draw)
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self.bind("<ButtonPress-1>", self._on_press)
+        self.bind("<ButtonRelease-1>", self._on_release)
+        self.bind("<FocusIn>", self._on_focus_in)
+        self.bind("<FocusOut>", self._on_focus_out)
+        self.bind("<Return>", self._on_keyboard)
+        self.bind("<space>", self._on_keyboard)
+
+    def _colors(self) -> tuple[str, str, str]:
+        palette = self._palette
+        if self._state == tk.DISABLED:
+            return palette["surface"], palette["tertiary"], palette["border"]
+        if self._role == "primary":
+            fill = palette["accent_active"] if self._pressed else palette["accent"]
+            return fill, "#FFFFFF", fill
+        if self._role == "danger":
+            fill = palette["danger_soft"] if self._hovered or self._pressed else palette["panel_alt"]
+            return fill, palette["danger"], palette["danger"] if self._focused else palette["border"]
+        if self._role == "segment":
+            if self._selected:
+                return palette["panel"], palette["text"], palette["border"]
+            fill = palette["border"] if self._hovered or self._pressed else palette["panel_alt"]
+            return fill, palette["secondary"], palette["panel_alt"]
+        fill = palette["border"] if self._hovered or self._pressed else palette["panel_alt"]
+        outline = palette["accent"] if self._focused else palette["border"]
+        return fill, palette["text"], outline
+
+    def _draw(self, _event: tk.Event | None = None) -> None:
+        width = max(2, self.winfo_width() - 1)
+        height = max(2, self.winfo_height() - 1)
+        fill, foreground, outline = self._colors()
+        self.delete("all")
+        self.create_polygon(
+            _rounded_points(width, height, self._radius),
+            smooth=True,
+            splinesteps=24,
+            fill=fill,
+            outline=outline,
+            width=1,
+        )
+        self.create_text(
+            width // 2,
+            height // 2,
+            text=self._text,
+            fill=foreground,
+            font=self._font,
+            anchor=tk.CENTER,
+        )
+
+    def _on_enter(self, _event: tk.Event) -> None:
+        self._hovered = True
+        self._draw()
+
+    def _on_leave(self, _event: tk.Event) -> None:
+        self._hovered = False
+        self._pressed = False
+        self._draw()
+
+    def _on_press(self, _event: tk.Event) -> None:
+        if self._state == tk.DISABLED:
+            return
+        self.focus_set()
+        self._pressed = True
+        self._draw()
+
+    def _on_release(self, event: tk.Event) -> None:
+        if self._state == tk.DISABLED:
+            return
+        was_pressed = self._pressed
+        self._pressed = False
+        self._draw()
+        if was_pressed and 0 <= event.x <= self.winfo_width() and 0 <= event.y <= self.winfo_height():
+            self.invoke()
+
+    def _on_focus_in(self, _event: tk.Event) -> None:
+        self._focused = True
+        self._draw()
+
+    def _on_focus_out(self, _event: tk.Event) -> None:
+        self._focused = False
+        self._pressed = False
+        self._draw()
+
+    def _on_keyboard(self, _event: tk.Event) -> str:
+        self.invoke()
+        return "break"
+
+    def invoke(self) -> object | None:
+        if self._state == tk.DISABLED:
+            return None
+        return self._command()
+
+    def set_selected(self, selected: bool) -> None:
+        if self._selected == selected:
+            return
+        self._selected = selected
+        self._draw()
+
+    def configure(self, cnf: object | None = None, **kwargs: object) -> object:
+        if "state" in kwargs:
+            self._state = str(kwargs.pop("state"))
+        if "text" in kwargs:
+            self._text = str(kwargs.pop("text"))
+        if "command" in kwargs:
+            self._command = kwargs.pop("command")  # type: ignore[assignment]
+        result = super().configure(cnf, **kwargs)
+        self._draw()
+        return result
+
+    config = configure
+
+    def cget(self, key: str) -> object:
+        if key == "text":
+            return self._text
+        if key == "command":
+            return self._command
+        if key == "state":
+            return self._state
+        return super().cget(key)
+
+
+class RoundedEntry(tk.Canvas):
+    """以 Canvas 外框包裹原生输入能力的圆角路径输入框。"""
+
+    def __init__(
+        self,
+        master: tk.Misc,
+        *,
+        textvariable: tk.StringVar,
+        palette: dict[str, str],
+        font: tuple[str, int] | tuple[str, int, str],
+        height: int = 38,
+    ) -> None:
+        self._palette = palette
+        self._focused = False
+        self._radius = 11
+        background = str(master.cget("background"))
+        super().__init__(
+            master,
+            height=height,
+            background=background,
+            highlightthickness=0,
+            borderwidth=0,
+        )
+        self.entry = tk.Entry(
+            self,
+            textvariable=textvariable,
+            font=font,
+            foreground=palette["text"],
+            background=palette["panel"],
+            insertbackground=palette["text"],
+            relief=tk.FLAT,
+            borderwidth=0,
+            highlightthickness=0,
+        )
+        self._entry_window = self.create_window(
+            12,
+            height // 2,
+            anchor=tk.W,
+            window=self.entry,
+        )
+        self.bind("<Configure>", self._draw)
+        self.entry.bind("<FocusIn>", self._on_focus)
+        self.entry.bind("<FocusOut>", self._on_focus)
+
+    def _on_focus(self, event: tk.Event) -> None:
+        self._focused = event.type == tk.EventType.FocusIn
+        self._draw()
+
+    def _draw(self, _event: tk.Event | None = None) -> None:
+        width = max(2, self.winfo_width() - 1)
+        height = max(2, self.winfo_height() - 1)
+        self.delete("entry-outline")
+        self.create_polygon(
+            _rounded_points(width, height, self._radius),
+            smooth=True,
+            splinesteps=24,
+            fill=self._palette["panel"],
+            outline=self._palette["accent"] if self._focused else self._palette["border"],
+            width=1,
+            tags="entry-outline",
+        )
+        self.tag_lower("entry-outline")
+        self.coords(self._entry_window, 12, height // 2)
+        self.itemconfigure(
+            self._entry_window,
+            width=max(1, width - 24),
+            height=max(1, height - 8),
+        )
+
+    def focus_set(self) -> None:
+        self.entry.focus_set()
+
+
+class RoundedSelect(tk.Canvas):
+    """使用圆角画布和系统菜单实现的只读下拉选择器。"""
+
+    def __init__(
+        self,
+        master: tk.Misc,
+        *,
+        textvariable: tk.StringVar,
+        values: tuple[str, ...],
+        palette: dict[str, str],
+        font: tuple[str, int] | tuple[str, int, str],
+        width: int = 150,
+        height: int = 38,
+    ) -> None:
+        self._variable = textvariable
+        self._values = values
+        self._palette = palette
+        self._font = font
+        self._hovered = False
+        self._focused = False
+        self._radius = 11
+        background = str(master.cget("background"))
+        super().__init__(
+            master,
+            width=width,
+            height=height,
+            background=background,
+            highlightthickness=0,
+            borderwidth=0,
+            takefocus=1,
+            cursor="pointinghand",
+        )
+        self._variable.trace_add("write", lambda *_: self._draw())
+        self.bind("<Configure>", self._draw)
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self.bind("<ButtonRelease-1>", self._show_menu)
+        self.bind("<Return>", self._show_menu)
+        self.bind("<space>", self._show_menu)
+        self.bind("<FocusIn>", self._on_focus)
+        self.bind("<FocusOut>", self._on_focus)
+
+    def _on_enter(self, _event: tk.Event) -> None:
+        self._hovered = True
+        self._draw()
+
+    def _on_leave(self, _event: tk.Event) -> None:
+        self._hovered = False
+        self._draw()
+
+    def _on_focus(self, event: tk.Event) -> None:
+        self._focused = event.type == tk.EventType.FocusIn
+        self._draw()
+
+    def _draw(self, _event: tk.Event | None = None) -> None:
+        width = max(2, self.winfo_width() - 1)
+        height = max(2, self.winfo_height() - 1)
+        fill = self._palette["panel_alt"] if self._hovered else self._palette["panel"]
+        outline = self._palette["accent"] if self._focused else self._palette["border"]
+        self.delete("all")
+        self.create_polygon(
+            _rounded_points(width, height, self._radius),
+            smooth=True,
+            splinesteps=24,
+            fill=fill,
+            outline=outline,
+            width=1,
+        )
+        self.create_text(
+            14,
+            height // 2,
+            text=self._variable.get(),
+            fill=self._palette["text"],
+            font=self._font,
+            anchor=tk.W,
+        )
+        self.create_text(
+            width - 15,
+            height // 2 - 1,
+            text="⌄",
+            fill=self._palette["secondary"],
+            font=self._font,
+            anchor=tk.CENTER,
+        )
+
+    def _show_menu(self, _event: tk.Event | None = None) -> str:
+        self.focus_set()
+        menu = tk.Menu(self, tearoff=False)
+        for value in self._values:
+            menu.add_radiobutton(
+                label=value,
+                value=value,
+                variable=self._variable,
+            )
+        try:
+            menu.tk_popup(self.winfo_rootx(), self.winfo_rooty() + self.winfo_height())
+        finally:
+            menu.grab_release()
+        return "break"
+
+
+class RoundedCheckbutton(tk.Canvas):
+    """与系统蓝强调色一致的轻量圆角复选框。"""
+
+    def __init__(
+        self,
+        master: tk.Misc,
+        *,
+        text: str,
+        variable: tk.BooleanVar,
+        palette: dict[str, str],
+        font: tuple[str, int] | tuple[str, int, str],
+    ) -> None:
+        self._text = text
+        self._variable = variable
+        self._palette = palette
+        self._font = font
+        self._hovered = False
+        measured = tkfont.Font(master=master, font=font).measure(text)
+        background = str(master.cget("background"))
+        super().__init__(
+            master,
+            width=measured + 32,
+            height=30,
+            background=background,
+            highlightthickness=0,
+            borderwidth=0,
+            takefocus=1,
+            cursor="pointinghand",
+        )
+        self._variable.trace_add("write", lambda *_: self._draw())
+        self.bind("<Configure>", self._draw)
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self.bind("<ButtonRelease-1>", self._toggle)
+        self.bind("<Return>", self._toggle)
+        self.bind("<space>", self._toggle)
+
+    def _on_enter(self, _event: tk.Event) -> None:
+        self._hovered = True
+        self._draw()
+
+    def _on_leave(self, _event: tk.Event) -> None:
+        self._hovered = False
+        self._draw()
+
+    def _toggle(self, _event: tk.Event | None = None) -> str:
+        self._variable.set(not self._variable.get())
+        return "break"
+
+    def _draw(self, _event: tk.Event | None = None) -> None:
+        checked = self._variable.get()
+        palette = self._palette
+        self.delete("all")
+        self.create_polygon(
+            _rounded_points(17, 17, 5),
+            smooth=True,
+            splinesteps=16,
+            fill=palette["accent"] if checked else palette["panel"],
+            outline=palette["accent"] if checked or self._hovered else palette["border"],
+            width=1,
+        )
+        if checked:
+            self.create_line(
+                4,
+                9,
+                7,
+                12,
+                13,
+                5,
+                fill="#FFFFFF",
+                width=2,
+                capstyle=tk.ROUND,
+                joinstyle=tk.ROUND,
+            )
+        self.create_text(
+            25,
+            9,
+            text=self._text,
+            fill=palette["text"],
+            font=self._font,
+            anchor=tk.W,
+        )
+
+
+class RoundedProgressbar(tk.Canvas):
+    """只显示真实确定型进度的圆角总进度条。"""
+
+    def __init__(
+        self,
+        master: tk.Misc,
+        *,
+        palette: dict[str, str],
+        length: int = 200,
+        height: int = 8,
+    ) -> None:
+        self._palette = palette
+        self._maximum = 100.0
+        self._value = 0.0
+        super().__init__(
+            master,
+            width=length,
+            height=height,
+            background=str(master.cget("background")),
+            highlightthickness=0,
+            borderwidth=0,
+        )
+        self.bind("<Configure>", self._draw)
+
+    def _draw(self, _event: tk.Event | None = None) -> None:
+        width = max(2, self.winfo_width() - 1)
+        height = max(2, self.winfo_height() - 1)
+        ratio = min(1.0, max(0.0, self._value / self._maximum)) if self._maximum else 0.0
+        fill_width = round(width * ratio)
+        self.delete("all")
+        self.create_polygon(
+            _rounded_points(width, height, height // 2),
+            smooth=True,
+            splinesteps=20,
+            fill=self._palette["panel_alt"],
+            outline=self._palette["border"],
+            width=1,
+        )
+        if fill_width > 1:
+            self.create_polygon(
+                _rounded_points(fill_width, height, min(height // 2, fill_width // 2)),
+                smooth=True,
+                splinesteps=20,
+                fill=self._palette["accent"],
+                outline=self._palette["accent"],
+                width=1,
+            )
+
+    def configure(self, cnf: object | None = None, **kwargs: object) -> object:
+        if "maximum" in kwargs:
+            self._maximum = max(1.0, float(kwargs.pop("maximum")))
+        if "value" in kwargs:
+            self._value = float(kwargs.pop("value"))
+        result = super().configure(cnf, **kwargs)
+        self._draw()
+        return result
+
+    config = configure
+
+    def cget(self, key: str) -> object:
+        if key == "mode":
+            return "determinate"
+        if key == "maximum":
+            return self._maximum
+        if key == "value":
+            return self._value
+        return super().cget(key)
 
 
 class RoundedPanel(tk.Canvas):
@@ -98,35 +637,15 @@ class RoundedPanel(tk.Canvas):
         self._radius = radius
         self._padding = padding
         self.body = tk.Frame(self, background=fill, borderwidth=0)
-        self._body_window = self.create_window(
-            padding[0],
-            padding[1],
-            anchor=tk.NW,
-            window=self.body,
-        )
+        self.body.place(x=padding[0], y=padding[1])
         self.bind("<Configure>", self._redraw)
 
     def _redraw(self, event: tk.Event) -> None:
         width = max(2, event.width - 1)
         height = max(2, event.height - 1)
-        radius = min(self._radius, width // 2, height // 2)
-        points = [
-            radius, 1,
-            width - radius, 1,
-            width - 1, 1,
-            width - 1, radius,
-            width - 1, height - radius,
-            width - 1, height - 1,
-            width - radius, height - 1,
-            radius, height - 1,
-            1, height - 1,
-            1, height - radius,
-            1, radius,
-            1, 1,
-        ]
         self.delete("panel")
         self.create_polygon(
-            points,
+            _rounded_points(width, height, self._radius),
             smooth=True,
             splinesteps=24,
             fill=self._fill,
@@ -134,11 +653,11 @@ class RoundedPanel(tk.Canvas):
             width=1,
             tags="panel",
         )
-        self.tag_lower("panel")
         pad_x, pad_y = self._padding
-        self.coords(self._body_window, pad_x, pad_y)
-        self.itemconfigure(
-            self._body_window,
+        # 直接布局子容器，避免 Notebook 切页时 Canvas 窗口延迟映射。
+        self.body.place_configure(
+            x=pad_x,
+            y=pad_y,
             width=max(1, event.width - pad_x * 2),
             height=max(1, event.height - pad_y * 2),
         )
@@ -148,62 +667,85 @@ class BasePage(ttk.Frame):
     """三个功能页共享的后台任务与状态栏。"""
 
     def __init__(self, master: tk.Misc) -> None:
-        super().__init__(master, padding=(24, 20), style="Page.TFrame")
+        super().__init__(master, padding=(28, 22), style="Page.TFrame")
         self._job_queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self._busy = False
         self.palette = self.winfo_toplevel().palette
+        self.stats_container: tk.Frame | None = None
+        self.table_frame: tk.Misc | None = None
+        self._tree_grid_lines: list[tk.Frame] = []
 
         self.content = ttk.Frame(self, style="Page.TFrame")
-        self.content.pack(fill=tk.BOTH, expand=True)
 
-        footer = ttk.Frame(self, style="Page.TFrame")
-        footer.pack(fill=tk.X, pady=(14, 0))
+        footer = tk.Frame(self, background=self.palette["surface"])
+        self.footer = footer
         self.status_var = tk.StringVar(value="就绪")
-        ttk.Label(footer, textvariable=self.status_var, style="Muted.TLabel").pack(side=tk.LEFT)
+        tk.Label(
+            footer,
+            textvariable=self.status_var,
+            background=self.palette["surface"],
+            foreground=self.palette["secondary"],
+            font=self.winfo_toplevel().font_caption,
+        ).pack(side=tk.LEFT)
         self.progress_text_var = tk.StringVar(value="0 / 0 · 0%")
-        ttk.Label(
+        tk.Label(
             footer,
             textvariable=self.progress_text_var,
-            style="Muted.TLabel",
+            background=self.palette["surface"],
+            foreground=self.palette["secondary"],
+            font=self.winfo_toplevel().font_caption,
         ).pack(side=tk.RIGHT)
-        self.progress = ttk.Progressbar(
+        self.progress = RoundedProgressbar(
             footer,
-            mode="determinate",
-            maximum=100,
-            value=0,
+            palette=self.palette,
             length=200,
         )
-        self.progress.pack(side=tk.RIGHT, padx=(0, 10))
+        self.progress.pack(side=tk.RIGHT, padx=(0, 12), pady=5)
         self._progress_current = 0
         self._progress_total = 0
+        self.content.pack(fill=tk.BOTH, expand=True)
 
     def run_job(
         self,
         status: str,
         function: Callable[[core.ProgressCallback], object],
         on_success: Callable[[object], None],
+        *,
+        on_progress: Callable[[int, int, str], None] | None = None,
     ) -> None:
         """在线程中执行耗时任务，界面更新仍留在主线程。"""
 
         if self._busy:
             return
         self._busy = True
+        self.show_footer()
         self.status_var.set(status)
         self._apply_progress(0, 0, status)
 
         def worker() -> None:
+            terminal_progress: tuple[int, int, str] | None = None
+
             def report_progress(current: int, total: int, message: str) -> None:
+                nonlocal terminal_progress
+                if total > 0 and current >= total:
+                    terminal_progress = (current, total, message)
+                    return
                 self._job_queue.put(("progress", (current, total, message)))
 
             try:
-                self._job_queue.put(("success", function(report_progress)))
+                result = function(report_progress)
+                self._job_queue.put(("success", (result, terminal_progress)))
             except Exception as exc:
                 self._job_queue.put(("error", exc))
 
         threading.Thread(target=worker, daemon=True).start()
-        self.after(80, lambda: self._poll_job(on_success))
+        self.after(80, lambda: self._poll_job(on_success, on_progress))
 
-    def _poll_job(self, on_success: Callable[[object], None]) -> None:
+    def _poll_job(
+        self,
+        on_success: Callable[[object], None],
+        on_progress: Callable[[int, int, str], None] | None,
+    ) -> None:
         latest_progress: tuple[int, int, str] | None = None
         final_event: tuple[str, object] | None = None
         while True:
@@ -218,8 +760,10 @@ class BasePage(ttk.Frame):
 
         if latest_progress is not None:
             self._apply_progress(*latest_progress)
+            if on_progress is not None:
+                on_progress(*latest_progress)
         if final_event is None:
-            self.after(80, lambda: self._poll_job(on_success))
+            self.after(80, lambda: self._poll_job(on_success, on_progress))
             return
 
         state, payload = final_event
@@ -228,9 +772,15 @@ class BasePage(ttk.Frame):
             self.status_var.set("操作失败")
             messagebox.showerror("操作失败", str(payload), parent=self)
             return
-        self._complete_progress()
+        result, terminal_progress = payload
+        if terminal_progress is not None:
+            self._apply_progress(*terminal_progress)
+            if on_progress is not None:
+                on_progress(*terminal_progress)
+        else:
+            self._complete_progress()
         self.status_var.set("完成")
-        on_success(payload)
+        on_success(result)
 
     def _apply_progress(self, current: int, total: int, message: str) -> None:
         """在主线程中显示当前数量、总数量和完成百分比。"""
@@ -260,6 +810,15 @@ class BasePage(ttk.Frame):
         self.progress.configure(maximum=1, value=1)
         self.progress_text_var.set("0 / 0 · 100%")
 
+    def show_footer(self) -> None:
+        """任务开始时显示状态和总进度，启动页面时保持隐藏。"""
+
+        if self.footer.winfo_manager():
+            return
+        self.content.pack_forget()
+        self.footer.pack(side=tk.BOTTOM, fill=tk.X, pady=(14, 0))
+        self.content.pack(fill=tk.BOTH, expand=True)
+
     @staticmethod
     def choose_folder(variable: tk.StringVar) -> None:
         selected = filedialog.askdirectory(title="选择照片文件夹")
@@ -279,55 +838,196 @@ class BasePage(ttk.Frame):
         for row in rows[:MAX_PREVIEW_ROWS]:
             tree.insert("", tk.END, values=row)
 
+    @staticmethod
+    def begin_activity(tree: ttk.Treeview, row: tuple[str, ...]) -> None:
+        """开始新任务时清空旧预览，并立即显示准备状态。"""
+
+        tree.delete(*tree.get_children())
+        tree.insert("", tk.END, values=row)
+
+    @staticmethod
+    def append_activity(tree: ttk.Treeview, row: tuple[str, ...]) -> None:
+        """追加实时处理记录，并限制行数以保持切页流畅。"""
+
+        children = tree.get_children()
+        if children and tuple(tree.item(children[-1], "values")) == row:
+            return
+        item = tree.insert("", tk.END, values=row)
+        overflow = len(children) + 1 - MAX_ACTIVITY_ROWS
+        if overflow > 0:
+            tree.delete(*children[:overflow])
+        tree.see(item)
+
+    def install_vertical_tree_grid(self, tree: ttk.Treeview) -> None:
+        """在结果表格各列之间绘制灰色实线，不增加横向网格。"""
+
+        columns = tuple(tree.cget("columns"))
+        self._tree_grid_lines = [
+            tk.Frame(
+                tree,
+                width=1,
+                background=self.palette["table_grid"],
+                borderwidth=0,
+            )
+            for _ in columns[:-1]
+        ]
+
+        def redraw_grid(_event: tk.Event | None = None) -> None:
+            if not tree.winfo_exists():
+                return
+            separator_x = 0
+            height = max(1, tree.winfo_height())
+            for index, line in enumerate(self._tree_grid_lines):
+                separator_x += int(tree.column(columns[index], "width"))
+                line.place(
+                    x=max(0, separator_x - 1),
+                    y=0,
+                    width=1,
+                    height=height,
+                )
+                line.lift()
+
+        tree.bind(
+            "<Configure>",
+            lambda _event: tree.after_idle(redraw_grid),
+            add="+",
+        )
+        tree.bind(
+            "<ButtonRelease-1>",
+            lambda _event: tree.after_idle(redraw_grid),
+            add="+",
+        )
+        tree.after_idle(redraw_grid)
+
     def create_stats(
         self,
         items: list[tuple[str, str]],
     ) -> dict[str, tk.StringVar]:
-        """创建一排始终可见的扫描统计卡片。"""
+        """创建默认隐藏、扫描完成后显示的统计卡片。"""
 
-        container = RoundedPanel(
+        container = tk.Frame(
+            self.content,
+            background=self.palette["surface"],
+            borderwidth=0,
+        )
+        self.stats_container = container
+        variables: dict[str, tk.StringVar] = {}
+        for index, (key, label) in enumerate(items):
+            is_emphasis = key in {"rename", "pending"}
+            is_danger = key == "conflicts"
+            fill = (
+                self.palette["danger_soft"]
+                if is_danger
+                else self.palette["accent_soft"]
+                if is_emphasis
+                else self.palette["panel"]
+            )
+            outline = (
+                self.palette["danger"]
+                if is_danger
+                else self.palette["accent"]
+                if is_emphasis
+                else self.palette["border"]
+            )
+            card = RoundedPanel(
+                container,
+                fill=fill,
+                outline=outline,
+                background=self.palette["surface"],
+                radius=15,
+                height=82,
+                padding=(16, 11),
+            )
+            card.grid(
+                row=0,
+                column=index,
+                sticky=tk.EW,
+                padx=(0, 8) if index < len(items) - 1 else 0,
+            )
+            container.grid_columnconfigure(index, weight=1, uniform="stats")
+            value_var = tk.StringVar(value="—")
+            variables[key] = value_var
+            tk.Label(
+                card.body,
+                textvariable=value_var,
+                font=self.winfo_toplevel().font_stat_value,
+                foreground=(
+                    self.palette["danger"]
+                    if is_danger
+                    else self.palette["text"]
+                ),
+                background=fill,
+                anchor=tk.W,
+            ).pack(fill=tk.X)
+            tk.Label(
+                card.body,
+                text=label,
+                font=self.winfo_toplevel().font_caption,
+                foreground=self.palette["secondary"],
+                background=fill,
+                anchor=tk.W,
+            ).pack(fill=tk.X)
+        return variables
+
+    def show_stats(self) -> None:
+        """首次扫描成功后，在结果表格上方显示统计卡片。"""
+
+        if (
+            self.stats_container is None
+            or self.table_frame is None
+            or self.stats_container.winfo_manager()
+        ):
+            return
+        self.stats_container.pack(
+            fill=tk.X,
+            pady=(0, 12),
+            before=self.table_frame,
+        )
+
+    def create_workflow_panel(self, *, height: int) -> tk.Frame:
+        """创建统一的圆角操作面板并返回内容容器。"""
+
+        panel = RoundedPanel(
             self.content,
             fill=self.palette["panel"],
             outline=self.palette["border"],
             background=self.palette["surface"],
             radius=18,
-            height=88,
-            padding=(14, 8),
+            height=height,
+            padding=(20, 14),
         )
-        container.pack(fill=tk.X, pady=(0, 14))
-        variables: dict[str, tk.StringVar] = {}
-        for index, (key, label) in enumerate(items):
-            card = tk.Frame(container.body, background=self.palette["panel"])
-            card.pack(side=tk.LEFT, fill=tk.X, expand=True)
-            value_var = tk.StringVar(value="—")
-            variables[key] = value_var
-            tk.Label(
-                card,
-                textvariable=value_var,
-                font=self.winfo_toplevel().font_stat_value,
-                foreground=self.palette["accent"],
-                background=self.palette["panel"],
-                anchor=tk.CENTER,
-            ).pack(fill=tk.X)
-            tk.Label(
-                card,
-                text=label,
-                font=self.winfo_toplevel().font_caption,
-                foreground=self.palette["secondary"],
-                background=self.palette["panel"],
-                anchor=tk.CENTER,
-            ).pack(fill=tk.X)
-            if index < len(items) - 1:
-                tk.Frame(
-                    container.body,
-                    width=1,
-                    background=self.palette["border"],
-                ).pack(
-                    side=tk.LEFT,
-                    fill=tk.Y,
-                    pady=8,
-                )
-        return variables
+        panel.pack(fill=tk.X, pady=(0, 12))
+        return panel.body
+
+    def create_divider(self, parent: tk.Misc) -> None:
+        """在操作面板内创建克制的分隔线。"""
+
+        tk.Frame(
+            parent,
+            height=1,
+            background=self.palette["border"],
+        ).pack(fill=tk.X, pady=(11, 10))
+
+    def create_button(
+        self,
+        parent: tk.Misc,
+        *,
+        text: str,
+        command: Callable[[], object],
+        role: str = "secondary",
+        width: int | None = None,
+    ) -> RoundedButton:
+        """创建与页面视觉令牌一致的圆角按钮。"""
+
+        return RoundedButton(
+            parent,
+            text=text,
+            command=command,
+            palette=self.palette,
+            font=self.winfo_toplevel().font_body_medium,
+            role=role,
+            width=width,
+        )
 
     @staticmethod
     def update_stats(
@@ -343,27 +1043,53 @@ class BasePage(ttk.Frame):
 class RenamePage(BasePage):
     """根据拍摄时间重命名页面。"""
 
-    def __init__(self, master: tk.Misc) -> None:
+    def __init__(
+        self,
+        master: tk.Misc,
+        folder_var: tk.StringVar | None = None,
+    ) -> None:
         super().__init__(master)
         self.plan: core.RenamePlan | None = None
-        self.folder_var = tk.StringVar()
+        self.folder_var = (
+            folder_var if folder_var is not None else tk.StringVar(master=self)
+        )
 
         self._title(
             "根据拍摄时间重命名",
             "按 EXIF 拍摄时间排序，将 RAW、JPG 和对应 XMP 侧车安全地统一命名。",
         )
-        self._folder_row()
+        workflow = self.create_workflow_panel(height=126)
+        self._folder_row(workflow)
+        self.create_divider(workflow)
 
-        action_row = ttk.Frame(self.content)
-        action_row.pack(fill=tk.X, pady=(0, 12))
-        ttk.Button(action_row, text="扫描并预览", command=self.preview).pack(side=tk.LEFT)
-        ttk.Button(
+        action_row = tk.Frame(workflow, background=self.palette["panel"])
+        action_row.pack(fill=tk.X)
+        self.create_button(
+            action_row,
+            text="扫描并预览",
+            command=self.preview,
+            width=120,
+        ).pack(side=tk.LEFT)
+        self.create_button(
             action_row,
             text="执行重命名",
-            style="Accent.TButton",
             command=self.execute,
+            role="primary",
+            width=130,
         ).pack(side=tk.LEFT, padx=8)
-        ttk.Button(action_row, text="撤回最近一次", command=self.undo).pack(side=tk.LEFT)
+        self.create_button(
+            action_row,
+            text="撤回最近一次",
+            command=self.undo,
+            width=140,
+        ).pack(side=tk.LEFT)
+        tk.Label(
+            action_row,
+            text="扫描包含所有子文件夹",
+            background=self.palette["panel"],
+            foreground=self.palette["tertiary"],
+            font=self.winfo_toplevel().font_caption,
+        ).pack(side=tk.RIGHT, padx=(12, 0))
 
         self.stats_vars = self.create_stats(
             [
@@ -393,36 +1119,59 @@ class RenamePage(BasePage):
             text=subtitle,
             style="Muted.TLabel",
             wraplength=850,
-        ).pack(anchor=tk.W, pady=(5, 18))
+        ).pack(anchor=tk.W, pady=(5, 16))
 
-    def _folder_row(self) -> None:
-        row = ttk.Frame(self.content, style="Page.TFrame")
-        row.pack(fill=tk.X, pady=(0, 14))
-        ttk.Entry(row, textvariable=self.folder_var).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Button(
+    def _folder_row(self, parent: tk.Misc) -> None:
+        row = tk.Frame(parent, background=self.palette["panel"])
+        row.pack(fill=tk.X)
+        tk.Label(
+            row,
+            text="照片文件夹",
+            width=10,
+            anchor=tk.W,
+            background=self.palette["panel"],
+            foreground=self.palette["secondary"],
+            font=self.winfo_toplevel().font_body_medium,
+        ).pack(side=tk.LEFT)
+        RoundedEntry(
+            row,
+            textvariable=self.folder_var,
+            palette=self.palette,
+            font=self.winfo_toplevel().font_body,
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.create_button(
             row,
             text="选择文件夹…",
             command=lambda: self.choose_folder(self.folder_var),
+            width=132,
         ).pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Label(row, text="包含所有子文件夹", style="Muted.TLabel").pack(
-            side=tk.LEFT,
-            padx=(12, 0),
-        )
 
     def _pack_tree(self, tree: ttk.Treeview) -> None:
-        frame = tk.Frame(
+        frame = RoundedPanel(
             self.content,
-            background=self.palette["panel"],
-            highlightbackground=self.palette["border"],
-            highlightcolor=self.palette["border"],
-            highlightthickness=1,
-            borderwidth=0,
+            fill=self.palette["panel"],
+            outline=self.palette["border"],
+            background=self.palette["surface"],
+            radius=17,
+            height=300,
+            padding=(8, 8),
         )
         frame.pack(fill=tk.BOTH, expand=True)
-        scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=tree.yview)
+        self.table_frame = frame
+        scrollbar = ttk.Scrollbar(frame.body, orient=tk.VERTICAL, command=tree.yview)
         tree.configure(yscrollcommand=scrollbar.set)
-        tree.pack(in_=frame, side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(1, 0), pady=1)
+        tree.pack(
+            in_=frame.body,
+            side=tk.LEFT,
+            fill=tk.BOTH,
+            expand=True,
+            padx=(1, 0),
+            pady=1,
+        )
+        # Treeview 的实际父级是页面内容区，需要提升到圆角 Canvas 上方。
+        tree.lift(frame)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.install_vertical_tree_grid(tree)
 
     def preview(self) -> None:
         try:
@@ -445,7 +1194,11 @@ class RenamePage(BasePage):
         assert isinstance(plan, core.RenamePlan)
         self.plan = plan
         rows = [
-            (operation.source, operation.target, operation.kind)
+            (
+                _display_filename(operation.source),
+                _display_filename(operation.target),
+                operation.kind,
+            )
             for operation in plan.operations
         ]
         self.fill_tree(self.tree, rows)
@@ -460,6 +1213,7 @@ class RenamePage(BasePage):
                 "conflicts": len(plan.conflicts),
             },
         )
+        self.show_stats()
         self.status_var.set(
             f"扫描 {plan.stats.total_images} 张照片；待改名 {plan.image_count} 张"
         )
@@ -494,17 +1248,38 @@ class RenamePage(BasePage):
         ):
             return
         plan = self.plan
+        self.begin_activity(self.tree, ("正在准备重命名", "", "等待执行"))
         self.run_job(
             "正在安全重命名…",
             lambda progress: core.execute_rename_plan(plan, progress=progress),
-            self._rename_finished,
+            lambda payload: self._rename_finished(payload, plan),
+            on_progress=self._show_rename_activity,
         )
 
-    def _rename_finished(self, payload: object) -> None:
+    def _show_rename_activity(
+        self,
+        current: int,
+        total: int,
+        message: str,
+    ) -> None:
+        state = "完成" if total > 0 and current >= total else "处理中"
+        self.append_activity(self.tree, (message, "", state))
+
+    def _rename_finished(self, payload: object, plan: core.RenamePlan) -> None:
         backup_path = Path(payload)
-        count = self.plan.image_count if self.plan else 0
+        count = plan.image_count
         self.plan = None
-        self.tree.delete(*self.tree.get_children())
+        self.fill_tree(
+            self.tree,
+            [
+                (
+                    _display_filename(operation.source),
+                    _display_filename(operation.target),
+                    f"{operation.kind} · 已重命名",
+                )
+                for operation in plan.operations
+            ],
+        )
         self.status_var.set(f"已重命名 {count} 张照片")
         messagebox.showinfo(
             "重命名完成",
@@ -519,24 +1294,38 @@ class RenamePage(BasePage):
             parent=self,
         ):
             return
+        self.begin_activity(self.tree, ("正在读取撤回记录", "", "等待恢复"))
         self.run_job(
             "正在撤回重命名…",
             lambda progress: core.undo_latest_rename(progress=progress),
-            lambda value: messagebox.showinfo(
-                "撤回完成",
-                f"已恢复 {value} 个文件。",
-                parent=self,
-            ),
+            self._rename_undo_finished,
+            on_progress=self._show_rename_activity,
+        )
+
+    def _rename_undo_finished(self, payload: object) -> None:
+        value = int(payload)
+        self.append_activity(self.tree, (f"已恢复 {value} 个文件", "", "撤回完成"))
+        self.status_var.set(f"已恢复 {value} 个文件")
+        messagebox.showinfo(
+            "撤回完成",
+            f"已恢复 {value} 个文件。",
+            parent=self,
         )
 
 
 class CleanupPage(BasePage):
     """RAW/JPG 配对清理页面。"""
 
-    def __init__(self, master: tk.Misc) -> None:
+    def __init__(
+        self,
+        master: tk.Misc,
+        folder_var: tk.StringVar | None = None,
+    ) -> None:
         super().__init__(master)
         self.items: list[core.CleanupItem] = []
-        self.folder_var = tk.StringVar()
+        self.folder_var = (
+            folder_var if folder_var is not None else tk.StringVar(master=self)
+        )
         self.kind_var = tk.StringVar(value="JPG")
 
         ttk.Label(self.content, text="RAW / JPG 配对清理", style="PageTitle.TLabel").pack(
@@ -546,24 +1335,49 @@ class CleanupPage(BasePage):
             self.content,
             text="递归检查同一文件夹内的同名照片；移入废纸篓前创建隐藏安全备份，恢复不依赖 Finder。",
             style="Muted.TLabel",
-        ).pack(anchor=tk.W, pady=(4, 16))
+        ).pack(anchor=tk.W, pady=(5, 16))
 
-        folder_row = ttk.Frame(self.content)
-        folder_row.pack(fill=tk.X, pady=(0, 12))
-        ttk.Entry(folder_row, textvariable=self.folder_var).pack(
+        workflow = self.create_workflow_panel(height=164)
+        folder_row = tk.Frame(workflow, background=self.palette["panel"])
+        folder_row.pack(fill=tk.X)
+        tk.Label(
+            folder_row,
+            text="照片文件夹",
+            width=10,
+            anchor=tk.W,
+            background=self.palette["panel"],
+            foreground=self.palette["secondary"],
+            font=self.winfo_toplevel().font_body_medium,
+        ).pack(side=tk.LEFT)
+        RoundedEntry(
+            folder_row,
+            textvariable=self.folder_var,
+            palette=self.palette,
+            font=self.winfo_toplevel().font_body,
+        ).pack(
             side=tk.LEFT,
             fill=tk.X,
             expand=True,
         )
-        ttk.Button(
+        self.create_button(
             folder_row,
             text="选择文件夹…",
             command=lambda: self.choose_folder(self.folder_var),
+            width=132,
         ).pack(side=tk.LEFT, padx=(8, 0))
 
-        option_row = ttk.Frame(self.content)
-        option_row.pack(fill=tk.X, pady=(0, 12))
-        ttk.Label(option_row, text="要清理的格式：").pack(side=tk.LEFT)
+        self.create_divider(workflow)
+        option_row = tk.Frame(workflow, background=self.palette["panel"])
+        option_row.pack(fill=tk.X)
+        tk.Label(
+            option_row,
+            text="清理格式",
+            width=10,
+            anchor=tk.W,
+            background=self.palette["panel"],
+            foreground=self.palette["secondary"],
+            font=self.winfo_toplevel().font_body_medium,
+        ).pack(side=tk.LEFT)
         ttk.Radiobutton(
             option_row,
             text="JPG（没有对应 RAW）",
@@ -577,16 +1391,34 @@ class CleanupPage(BasePage):
             value="RAW",
         ).pack(side=tk.LEFT)
 
-        action_row = ttk.Frame(self.content)
-        action_row.pack(fill=tk.X, pady=(0, 12))
-        ttk.Button(action_row, text="扫描并预览", command=self.preview).pack(side=tk.LEFT)
-        ttk.Button(
+        action_row = tk.Frame(workflow, background=self.palette["panel"])
+        action_row.pack(fill=tk.X, pady=(10, 0))
+        self.create_button(
+            action_row,
+            text="扫描并预览",
+            command=self.preview,
+            width=120,
+        ).pack(side=tk.LEFT)
+        self.create_button(
             action_row,
             text="移入废纸篓",
-            style="Danger.TButton",
             command=self.execute,
+            role="danger",
+            width=130,
         ).pack(side=tk.LEFT, padx=8)
-        ttk.Button(action_row, text="恢复最近一次清理", command=self.restore).pack(side=tk.LEFT)
+        self.create_button(
+            action_row,
+            text="恢复最近一次清理",
+            command=self.restore,
+            width=164,
+        ).pack(side=tk.LEFT)
+        tk.Label(
+            action_row,
+            text="扫描包含所有子文件夹",
+            background=self.palette["panel"],
+            foreground=self.palette["tertiary"],
+            font=self.winfo_toplevel().font_caption,
+        ).pack(side=tk.RIGHT, padx=(12, 0))
 
         self.stats_vars = self.create_stats(
             [
@@ -633,7 +1465,10 @@ class CleanupPage(BasePage):
         self.items = result.items
         self.fill_tree(
             self.tree,
-            [(item.path, item.missing_pair_kind) for item in self.items],
+            [
+                (_display_filename(item.path), item.missing_pair_kind)
+                for item in self.items
+            ],
         )
         self.update_stats(
             self.stats_vars,
@@ -645,6 +1480,7 @@ class CleanupPage(BasePage):
                 "pending": len(result.items),
             },
         )
+        self.show_stats()
         self.status_var.set(
             f"扫描 {result.total_images} 张照片；找到 {len(self.items)} 个待清理文件"
         )
@@ -664,19 +1500,44 @@ class CleanupPage(BasePage):
         ):
             return
         items = self.items.copy()
+        self.begin_activity(self.tree, ("正在准备清理", "等待执行"))
         self.run_job(
             "正在移入废纸篓…",
             lambda progress: core.move_cleanup_items_to_trash(
                 items,
                 progress=progress,
             ),
-            self._cleanup_finished,
+            lambda payload: self._cleanup_finished(payload, items),
+            on_progress=self._show_cleanup_activity,
         )
 
-    def _cleanup_finished(self, payload: object) -> None:
+    def _show_cleanup_activity(
+        self,
+        current: int,
+        total: int,
+        message: str,
+    ) -> None:
+        state = "完成" if total > 0 and current >= total else f"{current}/{total}"
+        self.append_activity(self.tree, (message, state))
+
+    def _cleanup_finished(
+        self,
+        payload: object,
+        items: list[core.CleanupItem],
+    ) -> None:
         moved, errors = payload
         self.items = []
-        self.tree.delete(*self.tree.get_children())
+        failed_paths = {error.split("：", 1)[0] for error in errors}
+        self.fill_tree(
+            self.tree,
+            [
+                (
+                    _display_filename(item.path),
+                    "处理失败" if item.path in failed_paths else "已移入废纸篓",
+                )
+                for item in items
+            ],
+        )
         self.status_var.set(f"已移入废纸篓 {moved} 个文件")
         text = f"已移入废纸篓 {moved} 个文件。"
         if errors:
@@ -691,14 +1552,20 @@ class CleanupPage(BasePage):
             parent=self,
         ):
             return
+        self.begin_activity(self.tree, ("正在读取清理记录", "等待恢复"))
         self.run_job(
             "正在从废纸篓恢复…",
             lambda progress: core.restore_latest_cleanup(progress=progress),
             self._restore_finished,
+            on_progress=self._show_cleanup_activity,
         )
 
     def _restore_finished(self, payload: object) -> None:
         restored, errors = payload
+        self.append_activity(
+            self.tree,
+            (f"已恢复 {restored} 个文件", "恢复完成" if not errors else "部分失败"),
+        )
         self.status_var.set(f"已恢复 {restored} 个文件")
         text = f"已恢复 {restored} 个文件。"
         if restored:
@@ -711,10 +1578,16 @@ class CleanupPage(BasePage):
 class SyncPage(BasePage):
     """Adobe Bridge 星标与颜色标签同步页面。"""
 
-    def __init__(self, master: tk.Misc) -> None:
+    def __init__(
+        self,
+        master: tk.Misc,
+        folder_var: tk.StringVar | None = None,
+    ) -> None:
         super().__init__(master)
         self.operations: list[core.SyncOperation] = []
-        self.folder_var = tk.StringVar()
+        self.folder_var = (
+            folder_var if folder_var is not None else tk.StringVar(master=self)
+        )
         self.direction_var = tk.StringVar(value="JPG → RAW")
         self.rating_var = tk.BooleanVar(value=True)
         self.label_var = tk.BooleanVar(value=True)
@@ -726,49 +1599,105 @@ class SyncPage(BasePage):
             self.content,
             text="在同名 JPG 与 RAW 之间同步 Adobe Bridge XMP 标记；RAW 永远只写入侧车文件。",
             style="Muted.TLabel",
-        ).pack(anchor=tk.W, pady=(4, 16))
+        ).pack(anchor=tk.W, pady=(5, 16))
 
-        folder_row = ttk.Frame(self.content)
-        folder_row.pack(fill=tk.X, pady=(0, 12))
-        ttk.Entry(folder_row, textvariable=self.folder_var).pack(
+        workflow = self.create_workflow_panel(height=164)
+        folder_row = tk.Frame(workflow, background=self.palette["panel"])
+        folder_row.pack(fill=tk.X)
+        tk.Label(
+            folder_row,
+            text="照片文件夹",
+            width=10,
+            anchor=tk.W,
+            background=self.palette["panel"],
+            foreground=self.palette["secondary"],
+            font=self.winfo_toplevel().font_body_medium,
+        ).pack(side=tk.LEFT)
+        RoundedEntry(
+            folder_row,
+            textvariable=self.folder_var,
+            palette=self.palette,
+            font=self.winfo_toplevel().font_body,
+        ).pack(
             side=tk.LEFT,
             fill=tk.X,
             expand=True,
         )
-        ttk.Button(
+        self.create_button(
             folder_row,
             text="选择文件夹…",
             command=lambda: self.choose_folder(self.folder_var),
+            width=132,
         ).pack(side=tk.LEFT, padx=(8, 0))
 
-        option_row = ttk.Frame(self.content)
-        option_row.pack(fill=tk.X, pady=(0, 12))
-        ttk.Label(option_row, text="方向：").pack(side=tk.LEFT)
-        ttk.Combobox(
+        self.create_divider(workflow)
+        option_row = tk.Frame(workflow, background=self.palette["panel"])
+        option_row.pack(fill=tk.X)
+        tk.Label(
+            option_row,
+            text="同步方向",
+            width=10,
+            anchor=tk.W,
+            background=self.palette["panel"],
+            foreground=self.palette["secondary"],
+            font=self.winfo_toplevel().font_body_medium,
+        ).pack(side=tk.LEFT)
+        RoundedSelect(
             option_row,
             textvariable=self.direction_var,
             values=("JPG → RAW", "RAW → JPG"),
-            state="readonly",
-            width=14,
+            palette=self.palette,
+            font=self.winfo_toplevel().font_body,
+            width=150,
         ).pack(side=tk.LEFT, padx=(6, 18))
-        ttk.Checkbutton(option_row, text="同步星标", variable=self.rating_var).pack(
+        RoundedCheckbutton(
+            option_row,
+            text="同步星标",
+            variable=self.rating_var,
+            palette=self.palette,
+            font=self.winfo_toplevel().font_body,
+        ).pack(
             side=tk.LEFT
         )
-        ttk.Checkbutton(option_row, text="同步颜色标签", variable=self.label_var).pack(
+        RoundedCheckbutton(
+            option_row,
+            text="同步颜色标签",
+            variable=self.label_var,
+            palette=self.palette,
+            font=self.winfo_toplevel().font_body,
+        ).pack(
             side=tk.LEFT,
             padx=(12, 0),
         )
 
-        action_row = ttk.Frame(self.content)
-        action_row.pack(fill=tk.X, pady=(0, 12))
-        ttk.Button(action_row, text="扫描并预览", command=self.preview).pack(side=tk.LEFT)
-        ttk.Button(
+        action_row = tk.Frame(workflow, background=self.palette["panel"])
+        action_row.pack(fill=tk.X, pady=(10, 0))
+        self.create_button(
+            action_row,
+            text="扫描并预览",
+            command=self.preview,
+            width=120,
+        ).pack(side=tk.LEFT)
+        self.create_button(
             action_row,
             text="执行同步",
-            style="Accent.TButton",
             command=self.execute,
+            role="primary",
+            width=120,
         ).pack(side=tk.LEFT, padx=8)
-        ttk.Button(action_row, text="撤回最近一次同步", command=self.undo).pack(side=tk.LEFT)
+        self.create_button(
+            action_row,
+            text="撤回最近一次同步",
+            command=self.undo,
+            width=164,
+        ).pack(side=tk.LEFT)
+        tk.Label(
+            action_row,
+            text="扫描包含所有子文件夹",
+            background=self.palette["panel"],
+            foreground=self.palette["tertiary"],
+            font=self.winfo_toplevel().font_caption,
+        ).pack(side=tk.RIGHT, padx=(12, 0))
 
         self.stats_vars = self.create_stats(
             [
@@ -833,7 +1762,12 @@ class SyncPage(BasePage):
                 else "不修改"
             )
             rows.append(
-                (operation.source, operation.target, rating_text, label_text)
+                (
+                    _display_filename(operation.source),
+                    _display_filename(operation.target),
+                    rating_text,
+                    label_text,
+                )
             )
         self.fill_tree(self.tree, rows)
         self.update_stats(
@@ -846,6 +1780,7 @@ class SyncPage(BasePage):
                 "pending": len(result.operations),
             },
         )
+        self.show_stats()
         self.status_var.set(
             f"扫描 {result.total_images} 张照片；找到 {len(self.operations)} 组需要同步"
         )
@@ -865,19 +1800,55 @@ class SyncPage(BasePage):
         ):
             return
         operations = self.operations.copy()
+        self.begin_activity(self.tree, ("正在准备同步", "", "", "等待执行"))
         self.run_job(
             "正在备份并同步 XMP 标记…",
             lambda progress: core.execute_sync_plan(
                 operations,
                 progress=progress,
             ),
-            self._sync_finished,
+            lambda payload: self._sync_finished(payload, operations),
+            on_progress=self._show_sync_activity,
         )
 
-    def _sync_finished(self, payload: object) -> None:
+    def _show_sync_activity(
+        self,
+        current: int,
+        total: int,
+        message: str,
+    ) -> None:
+        state = "完成" if total > 0 and current >= total else f"{current}/{total}"
+        self.append_activity(self.tree, (message, "", "", state))
+
+    def _sync_finished(
+        self,
+        payload: object,
+        operations: list[core.SyncOperation],
+    ) -> None:
         count, manifest = payload
         self.operations = []
-        self.tree.delete(*self.tree.get_children())
+        rows = []
+        for operation in operations:
+            rating_text = (
+                f"{operation.old_rating} → {operation.rating}"
+                if operation.rating is not None and operation.old_rating != operation.rating
+                else "不修改"
+            )
+            label_text = (
+                f"{core.describe_label(operation.old_label)} → "
+                f"{core.describe_label(operation.label)} · 已同步"
+                if operation.label is not None and operation.old_label != operation.label
+                else "已同步"
+            )
+            rows.append(
+                (
+                    _display_filename(operation.source),
+                    _display_filename(operation.target),
+                    rating_text,
+                    label_text,
+                )
+            )
+        self.fill_tree(self.tree, rows)
         self.status_var.set(f"已同步 {count} 组照片")
         messagebox.showinfo(
             "同步完成",
@@ -892,14 +1863,25 @@ class SyncPage(BasePage):
             parent=self,
         ):
             return
+        self.begin_activity(self.tree, ("正在读取同步备份", "", "", "等待恢复"))
         self.run_job(
             "正在恢复 XMP 备份…",
             lambda progress: core.undo_latest_sync(progress=progress),
-            lambda value: messagebox.showinfo(
-                "撤回完成",
-                f"已恢复 {value} 个目标文件。",
-                parent=self,
-            ),
+            self._sync_undo_finished,
+            on_progress=self._show_sync_activity,
+        )
+
+    def _sync_undo_finished(self, payload: object) -> None:
+        value = int(payload)
+        self.append_activity(
+            self.tree,
+            (f"已恢复 {value} 个目标文件", "", "", "撤回完成"),
+        )
+        self.status_var.set(f"已恢复 {value} 个目标文件")
+        messagebox.showinfo(
+            "撤回完成",
+            f"已恢复 {value} 个目标文件。",
+            parent=self,
         )
 
 
@@ -915,17 +1897,19 @@ class PhotoAssistantApp(tk.Tk):
         self._appearance_window: tk.Toplevel | None = None
         self.opacity_var: tk.DoubleVar | None = None
         self.opacity_text_var: tk.StringVar | None = None
+        # 三个工具共用同一照片文件夹路径，切换页面时无需重复选择。
+        self.shared_folder_var = tk.StringVar(master=self)
 
-        # 字体只影响视觉层，中文字符由系统自动回退到苹方。
-        self.font_title = ("-apple-system", 21, "bold")
-        self.font_page_title = ("-apple-system", 21, "bold")
-        self.font_body = ("-apple-system", 13)
-        self.font_body_medium = ("-apple-system", 13, "bold")
-        self.font_caption = ("-apple-system", 11)
-        self.font_stat_value = ("-apple-system", 20, "bold")
+        # SF Pro 使用可识别的字体族名称，中文字符由系统自动回退到苹方。
+        self.font_title = ("SF Pro Display", 18, "bold")
+        self.font_page_title = ("SF Pro Display", 21, "bold")
+        self.font_body = ("SF Pro Text", 12)
+        self.font_body_medium = ("SF Pro Text", 12, "bold")
+        self.font_caption = ("SF Pro Text", 11)
+        self.font_stat_value = ("SF Pro Display", 20, "bold")
 
         self.title(WINDOW_TITLE)
-        self.geometry("1160x800")
+        self.geometry("1180x820")
         self.minsize(980, 680)
         self.configure(background=self.palette["window"])
         self._set_icon()
@@ -1029,20 +2013,20 @@ class PhotoAssistantApp(tk.Tk):
 
     def _configure_styles(self) -> None:
         style = ttk.Style(self)
-        using_aqua = (
-            sys.platform == "darwin"
-            and not self.dark_mode
-            and "aqua" in style.theme_names()
-        )
-        if using_aqua:
-            style.theme_use("aqua")
-        elif "clam" in style.theme_names():
+        if "clam" in style.theme_names():
             style.theme_use("clam")
         palette = self.palette
+
         style.configure(".", font=self.font_body)
         style.configure("TFrame", background=palette["surface"])
         style.configure("Page.TFrame", background=palette["surface"])
+        style.configure("Panel.TFrame", background=palette["panel"])
         style.configure("TLabel", background=palette["surface"], foreground=palette["text"])
+        style.configure(
+            "Panel.TLabel",
+            background=palette["panel"],
+            foreground=palette["text"],
+        )
         style.configure(
             "Muted.TLabel",
             background=palette["surface"],
@@ -1054,28 +2038,27 @@ class PhotoAssistantApp(tk.Tk):
             background=palette["surface"],
             foreground=palette["text"],
         )
-        style.configure("TButton", padding=(14, 8), font=self.font_body)
-        style.configure("Header.TButton", padding=(12, 6), font=self.font_caption)
-        if not using_aqua:
-            # Clam 主题允许稳定控制深色控件，避免使用系统默认的浅米色按钮。
-            style.configure(
-                "TButton",
-                background=palette["panel_alt"],
-                foreground=palette["text"],
-                bordercolor=palette["border"],
-                lightcolor=palette["panel_alt"],
-                darkcolor=palette["border"],
-                relief=tk.FLAT,
-            )
-            style.map(
-                "TButton",
-                background=[
-                    ("pressed", palette["border"]),
-                    ("active", palette["border"]),
-                    ("disabled", palette["surface"]),
-                ],
-                foreground=[("disabled", palette["tertiary"])],
-            )
+        style.configure(
+            "TButton",
+            padding=(14, 8),
+            font=self.font_body_medium,
+            background=palette["panel_alt"],
+            foreground=palette["text"],
+            bordercolor=palette["border"],
+            lightcolor=palette["panel_alt"],
+            darkcolor=palette["border"],
+            relief=tk.FLAT,
+        )
+        style.map(
+            "TButton",
+            background=[
+                ("pressed", palette["border"]),
+                ("active", palette["border"]),
+                ("disabled", palette["surface"]),
+            ],
+            foreground=[("disabled", palette["tertiary"])],
+        )
+        style.configure("Header.TButton", padding=(12, 7), font=self.font_caption)
         style.configure(
             "TEntry",
             padding=(10, 8),
@@ -1098,26 +2081,42 @@ class PhotoAssistantApp(tk.Tk):
         )
         style.configure(
             "TCheckbutton",
-            background=palette["surface"],
+            background=palette["panel"],
             foreground=palette["text"],
+        )
+        style.map(
+            "TCheckbutton",
+            background=[("active", palette["panel"])],
+            foreground=[("disabled", palette["tertiary"])],
         )
         style.configure(
             "TRadiobutton",
-            background=palette["surface"],
+            background=palette["panel"],
             foreground=palette["text"],
+        )
+        style.map(
+            "TRadiobutton",
+            background=[("active", palette["panel"])],
+            foreground=[("disabled", palette["tertiary"])],
         )
         style.configure(
             "Accent.TButton",
-            foreground=palette["accent"] if using_aqua else "#FFFFFF",
+            foreground="#FFFFFF",
             background=palette["accent"],
             bordercolor=palette["accent"],
+            lightcolor=palette["accent"],
+            darkcolor=palette["accent"],
         )
         style.map(
             "Accent.TButton",
-            background=[("active", palette["accent_active"])],
+            background=[
+                ("pressed", palette["accent_active"]),
+                ("active", palette["accent_active"]),
+                ("disabled", palette["surface"]),
+            ],
             foreground=[
                 ("disabled", palette["tertiary"]),
-                ("active", palette["accent_active"] if using_aqua else "#FFFFFF"),
+                ("active", "#FFFFFF"),
             ],
         )
         style.configure(
@@ -1125,9 +2124,15 @@ class PhotoAssistantApp(tk.Tk):
             foreground=palette["danger"],
             background=palette["panel_alt"],
             bordercolor=palette["border"],
+            lightcolor=palette["panel_alt"],
+            darkcolor=palette["border"],
         )
         style.map(
             "Danger.TButton",
+            background=[
+                ("pressed", palette["danger_soft"]),
+                ("active", palette["danger_soft"]),
+            ],
             foreground=[
                 ("disabled", palette["tertiary"]),
                 ("active", palette["danger_active"]),
@@ -1156,89 +2161,108 @@ class PhotoAssistantApp(tk.Tk):
             padding=(10, 8),
         )
         style.configure(
-            "TNotebook",
-            background=palette["window"],
+            "Hidden.TNotebook",
+            background=palette["surface"],
             borderwidth=0,
-            bordercolor=palette["border"],
-            lightcolor=palette["border"],
-            darkcolor=palette["border"],
-            tabmargins=(8, 6, 8, 0),
+            bordercolor=palette["surface"],
+            lightcolor=palette["surface"],
+            darkcolor=palette["surface"],
+            relief=tk.FLAT,
+            tabmargins=0,
         )
+        style.layout("Hidden.TNotebook.Tab", [])
         style.configure(
-            "TNotebook.Tab",
+            "Segment.TButton",
             font=self.font_body_medium,
-            padding=(22, 11),
+            padding=(12, 9),
+            background=palette["panel_alt"],
+            foreground=palette["secondary"],
+            bordercolor=palette["panel_alt"],
+            lightcolor=palette["panel_alt"],
+            darkcolor=palette["panel_alt"],
         )
         style.map(
-            "TNotebook.Tab",
+            "Segment.TButton",
+            background=[
+                ("pressed", palette["border"]),
+                ("active", palette["border"]),
+            ],
             foreground=[
-                ("selected", palette["text"]),
-                ("!selected", palette["secondary"]),
+                ("pressed", palette["text"]),
+                ("active", palette["text"]),
             ],
         )
-        if not using_aqua:
-            style.configure(
-                "TNotebook.Tab",
-                background=palette["panel_alt"],
-                bordercolor=palette["border"],
-                lightcolor=palette["panel_alt"],
-                darkcolor=palette["border"],
-            )
-            style.map(
-                "TNotebook.Tab",
-                background=[
-                    ("selected", palette["panel"]),
-                    ("active", palette["border"]),
-                ],
-                foreground=[
-                    ("selected", palette["text"]),
-                    ("!selected", palette["secondary"]),
-                ],
-            )
-            style.configure(
-                "Vertical.TScrollbar",
-                background=palette["panel_alt"],
-                troughcolor=palette["surface"],
-                bordercolor=palette["border"],
-                lightcolor=palette["panel_alt"],
-                darkcolor=palette["border"],
-                arrowcolor=palette["secondary"],
-            )
-            style.configure(
-                "TScrollbar",
-                background=palette["panel_alt"],
-                troughcolor=palette["surface"],
-                bordercolor=palette["border"],
-                lightcolor=palette["panel_alt"],
-                darkcolor=palette["border"],
-                arrowcolor=palette["secondary"],
-            )
+        style.configure(
+            "SelectedSegment.TButton",
+            font=self.font_body_medium,
+            padding=(12, 9),
+            background=palette["panel"],
+            foreground=palette["text"],
+            bordercolor=palette["border"],
+            lightcolor=palette["panel"],
+            darkcolor=palette["border"],
+        )
+        style.map(
+            "SelectedSegment.TButton",
+            background=[
+                ("pressed", palette["panel"]),
+                ("active", palette["panel"]),
+            ],
+            foreground=[("active", palette["text"])],
+        )
+        style.configure(
+            "Vertical.TScrollbar",
+            background=palette["panel_alt"],
+            troughcolor=palette["surface"],
+            bordercolor=palette["border"],
+            lightcolor=palette["panel_alt"],
+            darkcolor=palette["border"],
+            arrowcolor=palette["secondary"],
+        )
+        style.configure(
+            "TScrollbar",
+            background=palette["panel_alt"],
+            troughcolor=palette["surface"],
+            bordercolor=palette["border"],
+            lightcolor=palette["panel_alt"],
+            darkcolor=palette["border"],
+            arrowcolor=palette["secondary"],
+        )
         style.configure(
             "Horizontal.TProgressbar",
             background=palette["accent"],
             troughcolor=palette["panel_alt"],
             borderwidth=0,
+            thickness=5,
         )
 
     def _build_ui(self) -> None:
         palette = self.palette
-        header = tk.Frame(self, bg=palette["chrome"], height=88, borderwidth=0)
+        header = tk.Frame(self, bg=palette["chrome"], height=104, borderwidth=0)
         header.pack(fill=tk.X)
         header.pack_propagate(False)
+        header.grid_columnconfigure(0, weight=1, minsize=310)
+        header.grid_columnconfigure(1, weight=0)
+        header.grid_columnconfigure(2, weight=1, minsize=130)
+        header.grid_rowconfigure(0, weight=1)
 
-        icon_path = Path(__file__).resolve().parent.parent / "assets" / "app_icon.png"
+        brand = tk.Frame(header, bg=palette["chrome"])
+        brand.grid(row=0, column=0, sticky=tk.NSEW, padx=(26, 14))
+        assets_dir = Path(__file__).resolve().parent.parent / "assets"
+        icon_path = assets_dir / "app_icon_header.png"
         if icon_path.exists():
             try:
-                self._header_icon = tk.PhotoImage(file=str(icon_path)).subsample(20, 20)
-                tk.Label(header, image=self._header_icon, bg=palette["chrome"]).pack(
+                # 使用由原图高质量缩放的页眉资源，避免 Tk 整数抽样造成模糊。
+                self._header_icon = tk.PhotoImage(file=str(icon_path))
+                tk.Label(brand, image=self._header_icon, bg=palette["chrome"]).pack(
                     side=tk.LEFT,
-                    padx=(24, 13),
+                    padx=(0, 13),
                 )
             except tk.TclError:
                 pass
 
-        title_box = tk.Frame(header, bg=palette["chrome"])
-        title_box.pack(side=tk.LEFT, pady=14)
+        title_box = tk.Frame(brand, bg=palette["chrome"])
+        title_box.pack(side=tk.LEFT)
         tk.Label(
             title_box,
             text=WINDOW_TITLE,
@@ -1254,13 +2278,46 @@ class PhotoAssistantApp(tk.Tk):
             font=self.font_caption,
         ).pack(anchor=tk.W, pady=(3, 0))
 
+        nav_panel = RoundedPanel(
+            header,
+            fill=palette["panel_alt"],
+            outline=palette["border"],
+            background=palette["chrome"],
+            radius=16,
+            height=49,
+            padding=(5, 5),
+        )
+        nav_panel.configure(width=390)
+        nav_panel.grid(row=0, column=1)
+        self._tab_buttons: list[RoundedButton] = []
+        tab_labels = ("时间重命名", "配对清理", "星标与颜色同步")
+        for index, label in enumerate(tab_labels):
+            button = RoundedButton(
+                nav_panel.body,
+                text=label,
+                command=lambda selected=index: self._select_page(selected),
+                palette=palette,
+                font=self.font_body_medium,
+                role="segment",
+                width=126,
+                height=38,
+                radius=11,
+            )
+            button.set_selected(index == 0)
+            button.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            self._tab_buttons.append(button)
+
         header_actions = tk.Frame(header, bg=palette["chrome"])
-        header_actions.pack(side=tk.RIGHT, padx=(8, 20))
-        ttk.Button(
+        header_actions.grid(row=0, column=2, sticky=tk.E, padx=(14, 22))
+        RoundedButton(
             header_actions,
             text="外观…",
-            style="Header.TButton",
             command=self.open_appearance_settings,
+            palette=palette,
+            font=self.font_caption,
+            width=88,
+            height=36,
+            radius=11,
         ).pack(side=tk.RIGHT)
         tk.Label(
             header_actions,
@@ -1272,12 +2329,39 @@ class PhotoAssistantApp(tk.Tk):
 
         tk.Frame(self, height=1, bg=palette["border"]).pack(fill=tk.X)
 
-        notebook = ttk.Notebook(self)
-        notebook.pack(fill=tk.BOTH, expand=True, padx=18, pady=(12, 18))
-        notebook.add(RenamePage(notebook), text="  时间重命名  ")
-        notebook.add(CleanupPage(notebook), text="  配对清理  ")
-        notebook.add(SyncPage(notebook), text="  星标与颜色同步  ")
+        notebook = ttk.Notebook(self, style="Hidden.TNotebook")
+        notebook.pack(fill=tk.BOTH, expand=True, padx=18, pady=(10, 18))
+        notebook.add(
+            RenamePage(notebook, self.shared_folder_var),
+            text="  时间重命名  ",
+        )
+        notebook.add(
+            CleanupPage(notebook, self.shared_folder_var),
+            text="  配对清理  ",
+        )
+        notebook.add(
+            SyncPage(notebook, self.shared_folder_var),
+            text="  星标与颜色同步  ",
+        )
         self.notebook = notebook
+        notebook.bind("<<NotebookTabChanged>>", self._sync_tab_styles)
+
+    def _select_page(self, index: int) -> None:
+        """通过顶部的分段导航切换原有三个功能页。"""
+
+        if self.notebook.index(self.notebook.select()) == index:
+            return
+        self.notebook.select(index)
+        self._sync_tab_styles()
+        # 点击事件返回前完成当前页面布局，避免短暂显示空白面板。
+        self.notebook.update_idletasks()
+
+    def _sync_tab_styles(self, _event: tk.Event | None = None) -> None:
+        """让分段导航的选中状态与 Notebook 页面保持一致。"""
+
+        selected = self.notebook.index(self.notebook.select())
+        for index, button in enumerate(self._tab_buttons):
+            button.set_selected(index == selected)
 
     def open_appearance_settings(self) -> None:
         """打开不干扰主要操作的透明度设置弹窗。"""
@@ -1365,16 +2449,22 @@ class PhotoAssistantApp(tk.Tk):
 
         button_row = tk.Frame(panel.body, background=palette["panel"])
         button_row.pack(fill=tk.X)
-        ttk.Button(
+        RoundedButton(
             button_row,
             text="恢复默认",
             command=self._reset_opacity,
+            palette=palette,
+            font=self.font_body_medium,
+            width=104,
         ).pack(side=tk.LEFT)
-        ttk.Button(
+        RoundedButton(
             button_row,
             text="完成",
-            style="Accent.TButton",
             command=window.destroy,
+            palette=palette,
+            font=self.font_body_medium,
+            role="primary",
+            width=88,
         ).pack(side=tk.RIGHT)
 
         self.update_idletasks()

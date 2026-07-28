@@ -229,7 +229,8 @@ def build_rename_plan(
     already_named_count = 0
     skipped_count = 0
     total_files = len(files)
-    _report_progress(progress, 0, total_files, f"正在读取照片信息 0/{total_files}")
+    total_steps = total_files * 2 + 1
+    _report_progress(progress, 0, total_steps, f"正在读取照片信息 0/{total_files}")
 
     for index, path in enumerate(files, start=1):
         renamed_match = RENAMED_STEM_RE.match(path.stem)
@@ -254,7 +255,7 @@ def build_rename_plan(
         _report_progress(
             progress,
             index,
-            total_files,
+            total_steps,
             f"正在读取拍摄时间 {index}/{total_files}",
         )
 
@@ -267,6 +268,14 @@ def build_rename_plan(
     last_date: str | None = None
     counter = 0
     image_count = 0
+    planned_files = 0
+
+    _report_progress(
+        progress,
+        total_files,
+        total_steps,
+        f"正在生成重命名预览 0/{total_files}",
+    )
 
     for capture_time, _, members in ordered_groups:
         date_text = capture_time.strftime("%y-%m-%d")
@@ -283,18 +292,24 @@ def build_rename_plan(
                 operations.append(RenameOperation(str(source), str(target), "照片"))
                 image_count += 1
 
-            if source.suffix.lower() not in RAW_EXTENSIONS:
-                continue
-            sidecars = _find_sidecars(source)
-            if len(sidecars) > 1:
-                warnings.append(f"发现多个 XMP 侧车，仅处理优先项：{source}")
-            if sidecars:
-                sidecar_source = sidecars[0]
-                sidecar_target = target.with_suffix(".xmp")
-                if sidecar_source != sidecar_target:
-                    operations.append(
-                        RenameOperation(str(sidecar_source), str(sidecar_target), "XMP 侧车")
-                    )
+            if source.suffix.lower() in RAW_EXTENSIONS:
+                sidecars = _find_sidecars(source)
+                if len(sidecars) > 1:
+                    warnings.append(f"发现多个 XMP 侧车，仅处理优先项：{source}")
+                if sidecars:
+                    sidecar_source = sidecars[0]
+                    sidecar_target = target.with_suffix(".xmp")
+                    if sidecar_source != sidecar_target:
+                        operations.append(
+                            RenameOperation(str(sidecar_source), str(sidecar_target), "XMP 侧车")
+                        )
+            planned_files += 1
+            _report_progress(
+                progress,
+                total_files + planned_files,
+                total_steps,
+                f"正在生成重命名预览 {planned_files}/{total_files}",
+            )
 
     conflicts = _find_rename_conflicts(operations)
     stats = RenameScanStats(
@@ -305,7 +320,7 @@ def build_rename_plan(
         skipped_count=skipped_count,
         xmp_count=sum(operation.kind == "XMP 侧车" for operation in operations),
     )
-    _report_progress(progress, total_files, total_files, f"扫描完成 {total_files}/{total_files}")
+    _report_progress(progress, total_steps, total_steps, f"扫描完成 {total_files}/{total_files}")
     return RenamePlan(operations, image_count, conflicts, warnings, stats)
 
 
@@ -355,7 +370,7 @@ def _run_two_phase_rename(
                 progress,
                 index,
                 total_steps,
-                f"正在准备文件 {index}/{len(active)}",
+                f"正在准备文件 {index}/{len(active)} · {source.name}",
             )
         for index, (source, temporary, target) in enumerate(staged, start=1):
             temporary.rename(target)
@@ -364,7 +379,8 @@ def _run_two_phase_rename(
                 progress,
                 len(active) + index,
                 total_steps,
-                f"正在写入新名称 {index}/{len(active)}",
+                f"正在写入新名称 {index}/{len(active)} · "
+                f"{source.name} → {target.name}",
             )
     except Exception:
         for source, target in reversed(completed):
@@ -559,7 +575,7 @@ def move_cleanup_items_to_trash(
             progress,
             index,
             total_items,
-            f"正在移入废纸篓 {index}/{total_items}",
+            f"正在移入废纸篓 {index}/{total_items} · {Path(item.path).name}",
         )
     if moved:
         payload = {
@@ -710,7 +726,7 @@ def restore_latest_cleanup(
                 progress,
                 index,
                 total_records,
-                f"正在恢复文件 {index}/{total_records}",
+                f"跳过恢复 {index}/{total_records} · {original.name}",
             )
             continue
         if not original.parent.is_dir():
@@ -719,7 +735,7 @@ def restore_latest_cleanup(
                 progress,
                 index,
                 total_records,
-                f"正在恢复文件 {index}/{total_records}",
+                f"恢复失败 {index}/{total_records} · {original.name}",
             )
             continue
 
@@ -734,7 +750,7 @@ def restore_latest_cleanup(
                     progress,
                     index,
                     total_records,
-                    f"正在恢复文件 {index}/{total_records}",
+                    f"已恢复文件 {index}/{total_records} · {original.name}",
                 )
                 continue
             except Exception as exc:
@@ -743,7 +759,7 @@ def restore_latest_cleanup(
                     progress,
                     index,
                     total_records,
-                    f"正在恢复文件 {index}/{total_records}",
+                    f"恢复失败 {index}/{total_records} · {original.name}",
                 )
                 continue
 
@@ -768,7 +784,7 @@ def restore_latest_cleanup(
                     progress,
                     index,
                     total_records,
-                    f"正在恢复文件 {index}/{total_records}",
+                    f"已恢复文件 {index}/{total_records} · {original.name}",
                 )
                 continue
             except Exception:
@@ -784,7 +800,11 @@ def restore_latest_cleanup(
             progress,
             index,
             total_records,
-            f"正在恢复文件 {index}/{total_records}",
+            (
+                f"已恢复文件 {index}/{total_records} · {original.name}"
+                if succeeded
+                else f"恢复失败 {index}/{total_records} · {original.name}"
+            ),
         )
 
     if restored == len(records):
@@ -1100,7 +1120,7 @@ def execute_sync_plan(
             progress,
             index + 1,
             total_steps,
-            f"正在备份目标文件 {index + 1}/{total_operations}",
+            f"正在备份目标文件 {index + 1}/{total_operations} · {target.name}",
         )
 
     manifest_path = session_dir / "manifest.json"
@@ -1126,7 +1146,8 @@ def execute_sync_plan(
                 progress,
                 total_operations + index,
                 total_steps,
-                f"正在写入 XMP 标记 {index}/{total_operations}",
+                f"正在写入 XMP 标记 {index}/{total_operations} · "
+                f"{Path(operation.target).name}",
             )
     except Exception:
         # 任一文件失败时立即恢复本批次，避免留下半完成状态。
@@ -1186,7 +1207,7 @@ def _restore_sync_manifest(
             progress,
             index,
             total_entries,
-            f"正在恢复 XMP 备份 {index}/{total_entries}",
+            f"正在恢复 XMP 备份 {index}/{total_entries} · {target.name}",
         )
     if mark_undone:
         data["undone_at"] = datetime.now().isoformat()
