@@ -909,15 +909,17 @@ def _find_windows_recycled_path(
                 ):
                     continue
 
-                deleted_value = recycle_folder2.GetDetailsEx(
-                    relative_pidl,
-                    (_win32_shell.FMTID_Displaced, 3),
-                )
-                deleted_time = (
-                    deleted_value.replace(tzinfo=None)
-                    if isinstance(deleted_value, datetime)
-                    else None
-                )
+                deleted_time: datetime | None = None
+                try:
+                    deleted_value = recycle_folder2.GetDetailsEx(
+                        relative_pidl,
+                        (_win32_shell.FMTID_Displaced, 3),
+                    )
+                    if isinstance(deleted_value, datetime):
+                        deleted_time = deleted_value.replace(tzinfo=None)
+                except Exception:
+                    # 删除时间只用于区分同一路径的多个版本，缺失时仍可恢复。
+                    deleted_time = None
                 distance = (
                     abs((deleted_time - recorded_time).total_seconds())
                     if deleted_time is not None and recorded_time is not None

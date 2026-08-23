@@ -23,6 +23,7 @@ a = Analysis(
         "send2trash",
         "pythoncom",
         "pywintypes",
+        "win32timezone",
         "win32com.shell.shell",
         "win32com.shell.shellcon",
     ],
