@@ -108,7 +108,7 @@ class GuiTests(unittest.TestCase):
                 "扫描并预览",
                 "执行重命名",
                 "撤回最近一次",
-                "移入废纸篓",
+                "移入回收站" if gui.sys.platform == "win32" else "移入废纸篓",
                 "恢复最近一次清理",
                 "执行同步",
                 "撤回最近一次同步",
@@ -293,7 +293,12 @@ class GuiTests(unittest.TestCase):
                     "values",
                 )
                 self.assertEqual(cleanup_values[0], "DSC0002.JPG")
-                self.assertEqual(cleanup_values[1], "已移入废纸篓")
+                self.assertEqual(
+                    cleanup_values[1],
+                    "已移入回收站"
+                    if gui.sys.platform == "win32"
+                    else "已移入废纸篓",
+                )
                 cleanup_page._restore_finished((1, []))
                 self.assertEqual(
                     cleanup_page.tree.item(cleanup_page.tree.get_children()[-1], "values")[1],

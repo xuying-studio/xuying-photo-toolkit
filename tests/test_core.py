@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 import unittest
 from datetime import datetime
@@ -333,6 +334,7 @@ class CleanupTests(unittest.TestCase):
         self.assertNotIn("every item of trash", script)
         self.assertIn('item "A001.jpg" of trash', script)
 
+    @unittest.skipIf(sys.platform == "win32", "Windows 直接使用系统回收站")
     def test_cleanup_recovery_does_not_depend_on_trash_access(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

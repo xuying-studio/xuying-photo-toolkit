@@ -53,8 +53,8 @@ class WindowsRecycleBinIntegrationTests(unittest.TestCase):
 
                 restored, restore_errors = core.restore_latest_cleanup()
 
+            self.assertFalse(restore_errors, restore_errors)
             self.assertEqual(restored, 1)
-            self.assertFalse(restore_errors)
             self.assertTrue(photo.exists())
             self.assertEqual(
                 photo.read_bytes(),
