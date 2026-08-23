@@ -960,7 +960,7 @@ def _move_windows_shell_path(source: str | Path, target: str | Path) -> str | No
         | _win32_shellcon.FOF_NOERRORUI
         | _win32_shellcon.FOF_SILENT
     )
-    result, aborted, _ = _win32_shell.SHFileOperation(
+    operation_result = _win32_shell.SHFileOperation(
         (
             0,
             _win32_shellcon.FO_MOVE,
@@ -971,6 +971,8 @@ def _move_windows_shell_path(source: str | Path, target: str | Path) -> str | No
             None,
         )
     )
+    result = operation_result[0]
+    aborted = operation_result[1]
     if result:
         return f"Windows Shell 移动失败，错误码 {result}。"
     if aborted:

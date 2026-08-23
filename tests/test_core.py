@@ -262,6 +262,32 @@ class CleanupTests(unittest.TestCase):
             fake_pythoncom.CoInitialize.assert_called_once_with()
             fake_pythoncom.CoUninitialize.assert_called_once_with()
 
+    def test_windows_shell_move_accepts_two_value_pywin32_result(self) -> None:
+        fake_shell = mock.Mock()
+        fake_shell.SHFileOperation.return_value = (0, False)
+        fake_shellcon = mock.Mock()
+        fake_shellcon.FOF_NOCONFIRMATION = 16
+        fake_shellcon.FOF_NOERRORUI = 1024
+        fake_shellcon.FOF_SILENT = 4
+        fake_shellcon.FO_MOVE = 1
+
+        with mock.patch.object(
+            core,
+            "_win32_shell",
+            fake_shell,
+        ), mock.patch.object(
+            core,
+            "_win32_shellcon",
+            fake_shellcon,
+        ):
+            error = core._move_windows_shell_path(
+                r"C:\$Recycle.Bin\$RTEST.jpg",
+                r"C:\照片\A001.jpg",
+            )
+
+        self.assertIsNone(error)
+        fake_shell.SHFileOperation.assert_called_once()
+
     def test_recursive_case_insensitive_pairing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
