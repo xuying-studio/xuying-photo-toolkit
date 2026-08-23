@@ -3,7 +3,7 @@
   <assemblyIdentity
     type="win32"
     name="XuyingStudio.PhotoToolkit"
-    version="1.0.11.0"
+    version="1.0.12.0"
     processorArchitecture="amd64"
   />
   <description>旭影的摄影工具集</description>

@@ -212,44 +212,18 @@ class CleanupTests(unittest.TestCase):
             self.assertFalse(restore_errors)
             self.assertTrue(photo.exists())
 
-    def test_windows_recycle_restore_uses_shell_movehere(self) -> None:
+    def test_windows_recycle_restore_uses_low_level_shell_move(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             original = root / "A001.jpg"
 
-            class FakeItem:
-                Name = original.name
-
-                @staticmethod
-                def ExtendedProperty(name: str) -> object:
-                    values = {
-                        "System.Recycle.DeletedFrom": str(original.parent),
-                        "System.FileName": original.name,
-                        "System.Recycle.DateDeleted": core.datetime.now(),
-                    }
-                    return values.get(name, "")
-
-            class FakeRecycleBin:
-                @staticmethod
-                def Items() -> list[FakeItem]:
-                    return [FakeItem()]
-
-            class FakeDestination:
-                calls: list[tuple[object, int]] = []
-
-                @classmethod
-                def MoveHere(cls, item: object, flags: int) -> None:
-                    cls.calls.append((item, flags))
-                    original.write_bytes(MINIMAL_JPEG)
-
-            class FakeShell:
-                @staticmethod
-                def NameSpace(value: object) -> object:
-                    return FakeRecycleBin() if value == 10 else FakeDestination()
+            def fake_move(source: str | Path, target: str | Path) -> None:
+                self.assertEqual(source, r"C:\$Recycle.Bin\$RTEST.jpg")
+                self.assertEqual(Path(target), original)
+                original.write_bytes(MINIMAL_JPEG)
+                return None
 
             fake_pythoncom = mock.Mock()
-            fake_client = mock.Mock()
-            fake_client.Dispatch.return_value = FakeShell()
 
             with mock.patch.object(
                 core,
@@ -257,9 +231,21 @@ class CleanupTests(unittest.TestCase):
                 fake_pythoncom,
             ), mock.patch.object(
                 core,
-                "_win32_client",
-                fake_client,
-            ):
+                "_win32_shell",
+                mock.Mock(),
+            ), mock.patch.object(
+                core,
+                "_win32_shellcon",
+                mock.Mock(),
+            ), mock.patch.object(
+                core,
+                "_find_windows_recycled_path",
+                return_value=(r"C:\$Recycle.Bin\$RTEST.jpg", None),
+            ) as find_mock, mock.patch.object(
+                core,
+                "_move_windows_shell_path",
+                side_effect=fake_move,
+            ) as move_mock:
                 succeeded, error = core._restore_from_windows_recycle_bin(
                     original,
                     core.datetime.now().astimezone().isoformat(),
@@ -267,7 +253,8 @@ class CleanupTests(unittest.TestCase):
 
             self.assertTrue(succeeded)
             self.assertIsNone(error)
-            self.assertEqual(FakeDestination.calls[0][1], 4 | 16 | 1024)
+            find_mock.assert_called_once()
+            move_mock.assert_called_once()
             fake_pythoncom.CoInitialize.assert_called_once_with()
             fake_pythoncom.CoUninitialize.assert_called_once_with()
 

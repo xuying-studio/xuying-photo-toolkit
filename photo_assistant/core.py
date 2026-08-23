@@ -27,10 +27,12 @@ from send2trash import send2trash
 
 if sys.platform == "win32":
     import pythoncom as _pythoncom
-    import win32com.client as _win32_client
+    from win32com.shell import shell as _win32_shell
+    from win32com.shell import shellcon as _win32_shellcon
 else:
     _pythoncom = None
-    _win32_client = None
+    _win32_shell = None
+    _win32_shellcon = None
 
 
 APP_NAME = "旭影的摄影工具集"
@@ -761,10 +763,44 @@ def _restore_from_windows_recycle_bin(
     original: Path,
     deleted_at: str | None,
 ) -> tuple[bool, str | None]:
-    """通过 Windows Shell 把匹配项目直接从回收站移回原目录。"""
+    """通过低层 Windows Shell 接口把回收站项目移回原路径。"""
 
-    if _pythoncom is None or _win32_client is None:
+    if (
+        _pythoncom is None
+        or _win32_shell is None
+        or _win32_shellcon is None
+    ):
         return False, "Windows 回收站组件不可用。"
+
+    _pythoncom.CoInitialize()
+    try:
+        recycled_path, find_error = _find_windows_recycled_path(
+            original,
+            deleted_at,
+        )
+        if recycled_path is None:
+            return False, find_error
+
+        move_error = _move_windows_shell_path(recycled_path, original)
+        if move_error is not None:
+            return False, move_error
+        if original.exists():
+            return True, None
+        return False, "Windows 已执行还原，但在原位置未检测到文件。"
+    except Exception as exc:
+        return False, f"Windows 回收站还原失败：{exc}"
+    finally:
+        _pythoncom.CoUninitialize()
+
+
+def _find_windows_recycled_path(
+    original: Path,
+    deleted_at: str | None,
+) -> tuple[str | None, str | None]:
+    """从回收站 PIDL 中精确找到原路径对应的物理项目。"""
+
+    assert _win32_shell is not None
+    assert _win32_shellcon is not None
 
     recorded_time: datetime | None = None
     if deleted_at:
@@ -773,109 +809,130 @@ def _restore_from_windows_recycle_bin(
         except ValueError:
             recorded_time = None
 
-    _pythoncom.CoInitialize()
-    try:
-        shell = _win32_client.Dispatch("Shell.Application")
-        recycle_bin = shell.NameSpace(10)
-        destination = shell.NameSpace(str(original.parent))
-        if recycle_bin is None:
-            return False, "无法访问 Windows 回收站。"
-        if destination is None:
-            return False, f"无法访问原文件夹：{original.parent}"
+    desktop = _win32_shell.SHGetDesktopFolder()
+    recycle_pidl = _win32_shell.SHGetSpecialFolderLocation(
+        0,
+        _win32_shellcon.CSIDL_BITBUCKET,
+    )
+    recycle_folder = desktop.BindToObject(
+        recycle_pidl,
+        None,
+        _win32_shell.IID_IShellFolder,
+    )
+    recycle_folder2 = recycle_folder.QueryInterface(
+        _win32_shell.IID_IShellFolder2
+    )
+    enum_flags = (
+        _win32_shellcon.SHCONTF_FOLDERS
+        | _win32_shellcon.SHCONTF_NONFOLDERS
+        | _win32_shellcon.SHCONTF_INCLUDEHIDDEN
+    )
 
-        candidates: list[tuple[float, float, object]] = []
-        observed_count = 0
-        same_name_count = 0
-        property_error_count = 0
-        search_deadline = time.monotonic() + 5
-        while not candidates and time.monotonic() < search_deadline:
-            recycle_bin = shell.NameSpace(10)
-            observed_count = 0
-            same_name_count = 0
-            property_error_count = 0
-            for recycled_item in recycle_bin.Items():
-                observed_count += 1
-                try:
-                    deleted_from = str(
-                        recycled_item.ExtendedProperty("System.Recycle.DeletedFrom")
-                        or ""
+    search_deadline = time.monotonic() + 5
+    last_observed = 0
+    last_errors = 0
+    while time.monotonic() < search_deadline:
+        candidates: list[tuple[float, float, str]] = []
+        last_observed = 0
+        last_errors = 0
+        enum_items = recycle_folder.EnumObjects(0, enum_flags)
+        while enum_items is not None:
+            pidls = enum_items.Next(1)
+            if not pidls:
+                break
+            relative_pidl = pidls[0]
+            last_observed += 1
+            try:
+                deleted_from = str(
+                    recycle_folder2.GetDetailsEx(
+                        relative_pidl,
+                        (_win32_shell.FMTID_Displaced, 2),
                     )
-                    property_name = str(
-                        recycled_item.ExtendedProperty("System.FileName") or ""
+                    or ""
+                )
+                original_name = str(
+                    recycle_folder.GetDisplayNameOf(
+                        relative_pidl,
+                        _win32_shellcon.SHGDN_INFOLDER,
                     )
-                    item_name = str(
-                        recycled_item.ExtendedProperty("System.ItemNameDisplay") or ""
+                    or ""
+                )
+                if (
+                    _windows_path_key(original_name)
+                    != _windows_path_key(original.name)
+                    or not _same_windows_directory(
+                        deleted_from,
+                        original.parent,
                     )
-                    display_name = str(recycled_item.Name or "")
-                    item_names = {
-                        name
-                        for name in (property_name, item_name, display_name)
-                        if name
-                    }
-                    if original.name.casefold() in {
-                        name.casefold() for name in item_names
-                    }:
-                        same_name_count += 1
-                    matching_names = {
-                        name
-                        for name in item_names
-                        if _windows_path_key(name)
-                        == _windows_path_key(original.name)
-                    }
-                    if (
-                        not deleted_from
-                        or not matching_names
-                        or not _same_windows_directory(
-                            deleted_from,
-                            original.parent,
-                        )
-                    ):
-                        continue
-
-                    deleted_value = recycled_item.ExtendedProperty(
-                        "System.Recycle.DateDeleted"
-                    )
-                    deleted_time = (
-                        deleted_value.replace(tzinfo=None)
-                        if isinstance(deleted_value, datetime)
-                        else None
-                    )
-                    distance = (
-                        abs((deleted_time - recorded_time).total_seconds())
-                        if deleted_time is not None and recorded_time is not None
-                        else float("inf")
-                    )
-                    recency = (
-                        -deleted_time.timestamp() if deleted_time is not None else 0.0
-                    )
-                    candidates.append((distance, recency, recycled_item))
-                except Exception:
-                    property_error_count += 1
+                ):
                     continue
-            if not candidates:
-                time.sleep(0.2)
 
-        if not candidates:
-            return (
-                False,
-                "Windows 回收站中未找到对应文件，可能已被清空或手动处理。"
-                f"（检查 {observed_count} 项，同名 {same_name_count} 项，"
-                f"属性读取失败 {property_error_count} 项）",
-            )
+                deleted_value = recycle_folder2.GetDetailsEx(
+                    relative_pidl,
+                    (_win32_shell.FMTID_Displaced, 3),
+                )
+                deleted_time = (
+                    deleted_value.replace(tzinfo=None)
+                    if isinstance(deleted_value, datetime)
+                    else None
+                )
+                distance = (
+                    abs((deleted_time - recorded_time).total_seconds())
+                    if deleted_time is not None and recorded_time is not None
+                    else float("inf")
+                )
+                recency = (
+                    -deleted_time.timestamp() if deleted_time is not None else 0.0
+                )
+                recycled_path = str(
+                    recycle_folder.GetDisplayNameOf(
+                        relative_pidl,
+                        _win32_shellcon.SHGDN_FORPARSING,
+                    )
+                )
+                candidates.append((distance, recency, recycled_path))
+            except Exception:
+                last_errors += 1
 
-        matched_item = min(candidates, key=lambda value: (value[0], value[1]))[2]
-        # 禁止覆盖和错误弹窗；原位置已有文件会在调用前被业务层拦截。
-        destination.MoveHere(matched_item, 4 | 16 | 1024)
-        deadline = time.monotonic() + 8
-        while time.monotonic() < deadline:
-            if original.exists():
-                return True, None
-            time.sleep(0.1)
-        return False, "Windows 已执行还原，但在原位置未检测到文件。"
-    except Exception as exc:
-        return False, f"Windows 回收站还原失败：{exc}"
-    finally:
-        _pythoncom.CoUninitialize()
+        if candidates:
+            matched = min(candidates, key=lambda value: (value[0], value[1]))
+            return matched[2], None
+        time.sleep(0.2)
+
+    return (
+        None,
+        "Windows 回收站中未找到对应文件，可能已被清空或手动处理。"
+        f"（检查 {last_observed} 项，属性读取失败 {last_errors} 项）",
+    )
+
+
+def _move_windows_shell_path(source: str | Path, target: str | Path) -> str | None:
+    """使用 SHFileOperation 移动回收站物理项目并检查返回状态。"""
+
+    assert _win32_shell is not None
+    assert _win32_shellcon is not None
+
+    flags = (
+        _win32_shellcon.FOF_NOCONFIRMATION
+        | _win32_shellcon.FOF_NOERRORUI
+        | _win32_shellcon.FOF_SILENT
+    )
+    result, aborted, _ = _win32_shell.SHFileOperation(
+        (
+            0,
+            _win32_shellcon.FO_MOVE,
+            str(source),
+            str(target),
+            flags,
+            None,
+            None,
+        )
+    )
+    if result:
+        return f"Windows Shell 移动失败，错误码 {result}。"
+    if aborted:
+        return "Windows Shell 取消了还原操作。"
+    return None
 
 
 def _restore_with_platform_fallback(

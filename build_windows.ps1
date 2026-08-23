@@ -75,6 +75,24 @@ if (-not (Test-Path $PortableExe)) {
 }
 
 if (-not $SkipSmokeTest) {
+    $RecycleSelfTestDir = Join-Path $env:TEMP "xuying-recycle-self-test-$PID"
+    $RecycleSelfTestReport = Join-Path $RecycleSelfTestDir "result.json"
+    $RecycleSelfTestProcess = Start-Process -FilePath $PortableExe -ArgumentList @(
+        "--windows-recycle-self-test",
+        $RecycleSelfTestReport
+    ) -Wait -PassThru
+    if (
+        $RecycleSelfTestProcess.ExitCode -ne 0
+        -or -not (Test-Path $RecycleSelfTestReport)
+    ) {
+        $RecycleSelfTestDetail = if (Test-Path $RecycleSelfTestReport) {
+            Get-Content $RecycleSelfTestReport -Raw
+        } else {
+            "未生成自测报告。"
+        }
+        throw "打包后的 Windows 回收站自测失败：$RecycleSelfTestDetail"
+    }
+
     $SmokeScreenshot = Join-Path $DistDir "windows-smoke.png"
     Test-GuiExecutable `
         -ExecutablePath $PortableExe `
