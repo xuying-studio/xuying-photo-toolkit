@@ -19,13 +19,30 @@ $ChecksumPath = Join-Path $DistDir "SHA256SUMS.txt"
 function Test-GuiExecutable {
     param(
         [string]$ExecutablePath,
-        [string]$Label
+        [string]$Label,
+        [string]$ScreenshotPath = ""
     )
 
     $Process = Start-Process -FilePath $ExecutablePath -PassThru
     Start-Sleep -Seconds 5
     if ($Process.HasExited) {
         throw "$Label 启动冒烟测试失败，退出码：$($Process.ExitCode)"
+    }
+    if ($ScreenshotPath) {
+        Add-Type -AssemblyName System.Drawing
+        Add-Type -AssemblyName System.Windows.Forms
+        $Bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+        $Bitmap = New-Object System.Drawing.Bitmap $Bounds.Width, $Bounds.Height
+        $Graphics = [System.Drawing.Graphics]::FromImage($Bitmap)
+        $Graphics.CopyFromScreen(
+            $Bounds.Location,
+            [System.Drawing.Point]::Empty,
+            $Bounds.Size
+        )
+        $Bitmap.Save($ScreenshotPath, [System.Drawing.Imaging.ImageFormat]::Png)
+        $Graphics.Dispose()
+        $Bitmap.Dispose()
+        if (-not (Test-Path $ScreenshotPath)) { throw "Windows 界面截图失败。" }
     }
     Stop-Process -Id $Process.Id -Force
     Wait-Process -Id $Process.Id -ErrorAction SilentlyContinue
@@ -58,7 +75,11 @@ if (-not (Test-Path $PortableExe)) {
 }
 
 if (-not $SkipSmokeTest) {
-    Test-GuiExecutable -ExecutablePath $PortableExe -Label "Windows 便携版"
+    $SmokeScreenshot = Join-Path $DistDir "windows-smoke.png"
+    Test-GuiExecutable `
+        -ExecutablePath $PortableExe `
+        -Label "Windows 便携版" `
+        -ScreenshotPath $SmokeScreenshot
 }
 
 & $Python scripts/create_portable_zip.py $PortableDir $ZipPath

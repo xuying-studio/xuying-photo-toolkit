@@ -37,4 +37,5 @@ jobs:
             dist-windows/*.zip
             dist-windows/*.exe
             dist-windows/SHA256SUMS.txt
+            dist-windows/windows-smoke.png
           retention-days: 14
