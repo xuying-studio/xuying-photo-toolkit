@@ -774,49 +774,55 @@ def _restore_from_windows_recycle_bin(
 
         expected_path = _windows_path_key(original)
         candidates: list[tuple[float, float, object]] = []
-        for recycled_item in recycle_bin.Items():
-            try:
-                deleted_from = str(
-                    recycled_item.ExtendedProperty("System.Recycle.DeletedFrom")
-                    or ""
-                )
-                property_name = str(
-                    recycled_item.ExtendedProperty("System.FileName") or ""
-                )
-                item_name = str(
-                    recycled_item.ExtendedProperty("System.ItemNameDisplay") or ""
-                )
-                display_name = str(recycled_item.Name or "")
-                item_names = {
-                    name
-                    for name in (property_name, item_name, display_name)
-                    if name
-                }
-                if not deleted_from or not any(
-                    _windows_path_key(ntpath.join(deleted_from, name)) == expected_path
-                    for name in item_names
-                ):
-                    continue
+        search_deadline = time.monotonic() + 5
+        while not candidates and time.monotonic() < search_deadline:
+            recycle_bin = shell.NameSpace(10)
+            for recycled_item in recycle_bin.Items():
+                try:
+                    deleted_from = str(
+                        recycled_item.ExtendedProperty("System.Recycle.DeletedFrom")
+                        or ""
+                    )
+                    property_name = str(
+                        recycled_item.ExtendedProperty("System.FileName") or ""
+                    )
+                    item_name = str(
+                        recycled_item.ExtendedProperty("System.ItemNameDisplay") or ""
+                    )
+                    display_name = str(recycled_item.Name or "")
+                    item_names = {
+                        name
+                        for name in (property_name, item_name, display_name)
+                        if name
+                    }
+                    if not deleted_from or not any(
+                        _windows_path_key(ntpath.join(deleted_from, name))
+                        == expected_path
+                        for name in item_names
+                    ):
+                        continue
 
-                deleted_value = recycled_item.ExtendedProperty(
-                    "System.Recycle.DateDeleted"
-                )
-                deleted_time = (
-                    deleted_value.replace(tzinfo=None)
-                    if isinstance(deleted_value, datetime)
-                    else None
-                )
-                distance = (
-                    abs((deleted_time - recorded_time).total_seconds())
-                    if deleted_time is not None and recorded_time is not None
-                    else float("inf")
-                )
-                recency = (
-                    -deleted_time.timestamp() if deleted_time is not None else 0.0
-                )
-                candidates.append((distance, recency, recycled_item))
-            except Exception:
-                continue
+                    deleted_value = recycled_item.ExtendedProperty(
+                        "System.Recycle.DateDeleted"
+                    )
+                    deleted_time = (
+                        deleted_value.replace(tzinfo=None)
+                        if isinstance(deleted_value, datetime)
+                        else None
+                    )
+                    distance = (
+                        abs((deleted_time - recorded_time).total_seconds())
+                        if deleted_time is not None and recorded_time is not None
+                        else float("inf")
+                    )
+                    recency = (
+                        -deleted_time.timestamp() if deleted_time is not None else 0.0
+                    )
+                    candidates.append((distance, recency, recycled_item))
+                except Exception:
+                    continue
+            if not candidates:
+                time.sleep(0.2)
 
         if not candidates:
             return False, "Windows 回收站中未找到对应文件，可能已被清空或手动处理。"
