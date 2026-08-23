@@ -231,6 +231,10 @@ class CleanupTests(unittest.TestCase):
                 fake_pythoncom,
             ), mock.patch.object(
                 core,
+                "_pywintypes",
+                mock.Mock(),
+            ), mock.patch.object(
+                core,
                 "_win32_shell",
                 mock.Mock(),
             ), mock.patch.object(

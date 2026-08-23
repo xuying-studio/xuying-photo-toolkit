@@ -27,10 +27,12 @@ from send2trash import send2trash
 
 if sys.platform == "win32":
     import pythoncom as _pythoncom
+    import pywintypes as _pywintypes
     from win32com.shell import shell as _win32_shell
     from win32com.shell import shellcon as _win32_shellcon
 else:
     _pythoncom = None
+    _pywintypes = None
     _win32_shell = None
     _win32_shellcon = None
 
@@ -767,6 +769,7 @@ def _restore_from_windows_recycle_bin(
 
     if (
         _pythoncom is None
+        or _pywintypes is None
         or _win32_shell is None
         or _win32_shellcon is None
     ):
@@ -801,6 +804,7 @@ def _find_windows_recycled_path(
 
     assert _win32_shell is not None
     assert _win32_shellcon is not None
+    assert _pywintypes is not None
 
     recorded_time: datetime | None = None
     if deleted_at:
@@ -854,16 +858,44 @@ def _find_windows_recycled_path(
                     )
                     or ""
                 )
-                original_name = str(
-                    recycle_folder.GetDisplayNameOf(
+                item_names: set[str] = set()
+                property_keys = (
+                    (
+                        _pywintypes.IID(
+                            "{41CF5AE0-F75A-4806-BD87-59C7D9248EB9}"
+                        ),
+                        100,
+                    ),
+                    (
+                        _pywintypes.IID(
+                            "{B725F130-47EF-101A-A5F1-02608C9EEBAC}"
+                        ),
+                        10,
+                    ),
+                )
+                for property_key in property_keys:
+                    try:
+                        value = recycle_folder2.GetDetailsEx(
+                            relative_pidl,
+                            property_key,
+                        )
+                        if value:
+                            item_names.add(str(value))
+                    except Exception:
+                        continue
+                try:
+                    display_name = recycle_folder.GetDisplayNameOf(
                         relative_pidl,
                         _win32_shellcon.SHGDN_INFOLDER,
                     )
-                    or ""
-                )
-                name_matches = (
-                    _windows_path_key(original_name)
+                    if display_name:
+                        item_names.add(str(display_name))
+                except Exception:
+                    pass
+                name_matches = any(
+                    _windows_path_key(name)
                     == _windows_path_key(original.name)
+                    for name in item_names
                 )
                 parent_matches = _same_windows_directory(
                     deleted_from,
