@@ -122,6 +122,15 @@ class CleanupTests(unittest.TestCase):
         with mock.patch.object(core.sys, "platform", "win32"):
             self.assertIsNone(core._trash_dir_for_path(Path("C:/照片/A001.jpg")))
 
+    def test_windows_directory_identity_accepts_short_path_alias(self) -> None:
+        with mock.patch.object(core.os.path, "samefile", return_value=True):
+            self.assertTrue(
+                core._same_windows_directory(
+                    r"C:\Users\RUNNER~1\Temp",
+                    r"C:\Users\runneradmin\Temp",
+                )
+            )
+
     def test_windows_restore_fallback_never_calls_finder(self) -> None:
         with mock.patch.object(core.sys, "platform", "win32"), mock.patch.object(
             core,

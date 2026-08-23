@@ -746,6 +746,17 @@ def _windows_path_key(value: str | Path) -> str:
     return ntpath.normcase(ntpath.normpath(str(value)))
 
 
+def _same_windows_directory(left: str | Path, right: str | Path) -> bool:
+    """兼容 Windows 长路径、8.3 短路径和大小写差异。"""
+
+    if _windows_path_key(left) == _windows_path_key(right):
+        return True
+    try:
+        return os.path.samefile(left, right)
+    except OSError:
+        return False
+
+
 def _restore_from_windows_recycle_bin(
     original: Path,
     deleted_at: str | None,
@@ -772,7 +783,6 @@ def _restore_from_windows_recycle_bin(
         if destination is None:
             return False, f"无法访问原文件夹：{original.parent}"
 
-        expected_path = _windows_path_key(original)
         candidates: list[tuple[float, float, object]] = []
         observed_count = 0
         same_name_count = 0
@@ -806,10 +816,19 @@ def _restore_from_windows_recycle_bin(
                         name.casefold() for name in item_names
                     }:
                         same_name_count += 1
-                    if not deleted_from or not any(
-                        _windows_path_key(ntpath.join(deleted_from, name))
-                        == expected_path
+                    matching_names = {
+                        name
                         for name in item_names
+                        if _windows_path_key(name)
+                        == _windows_path_key(original.name)
+                    }
+                    if (
+                        not deleted_from
+                        or not matching_names
+                        or not _same_windows_directory(
+                            deleted_from,
+                            original.parent,
+                        )
                     ):
                         continue
 
