@@ -774,10 +774,17 @@ def _restore_from_windows_recycle_bin(
 
         expected_path = _windows_path_key(original)
         candidates: list[tuple[float, float, object]] = []
+        observed_count = 0
+        same_name_count = 0
+        property_error_count = 0
         search_deadline = time.monotonic() + 5
         while not candidates and time.monotonic() < search_deadline:
             recycle_bin = shell.NameSpace(10)
+            observed_count = 0
+            same_name_count = 0
+            property_error_count = 0
             for recycled_item in recycle_bin.Items():
+                observed_count += 1
                 try:
                     deleted_from = str(
                         recycled_item.ExtendedProperty("System.Recycle.DeletedFrom")
@@ -795,6 +802,10 @@ def _restore_from_windows_recycle_bin(
                         for name in (property_name, item_name, display_name)
                         if name
                     }
+                    if original.name.casefold() in {
+                        name.casefold() for name in item_names
+                    }:
+                        same_name_count += 1
                     if not deleted_from or not any(
                         _windows_path_key(ntpath.join(deleted_from, name))
                         == expected_path
@@ -820,12 +831,18 @@ def _restore_from_windows_recycle_bin(
                     )
                     candidates.append((distance, recency, recycled_item))
                 except Exception:
+                    property_error_count += 1
                     continue
             if not candidates:
                 time.sleep(0.2)
 
         if not candidates:
-            return False, "Windows 回收站中未找到对应文件，可能已被清空或手动处理。"
+            return (
+                False,
+                "Windows 回收站中未找到对应文件，可能已被清空或手动处理。"
+                f"（检查 {observed_count} 项，同名 {same_name_count} 项，"
+                f"属性读取失败 {property_error_count} 项）",
+            )
 
         matched_item = min(candidates, key=lambda value: (value[0], value[1]))[2]
         # 禁止覆盖和错误弹窗；原位置已有文件会在调用前被业务层拦截。
