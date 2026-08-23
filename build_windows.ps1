@@ -82,8 +82,8 @@ if (-not $SkipSmokeTest) {
         $RecycleSelfTestReport
     ) -Wait -PassThru
     if (
-        $RecycleSelfTestProcess.ExitCode -ne 0
-        -or -not (Test-Path $RecycleSelfTestReport)
+        ($RecycleSelfTestProcess.ExitCode -ne 0) -or
+        (-not (Test-Path $RecycleSelfTestReport))
     ) {
         $RecycleSelfTestDetail = if (Test-Path $RecycleSelfTestReport) {
             Get-Content $RecycleSelfTestReport -Raw
