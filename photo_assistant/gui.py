@@ -2009,6 +2009,12 @@ class PhotoAssistantApp(tk.Tk):
     def _save_ui_config(self) -> None:
         """原子保存外观配置。"""
 
+        if self._config_save_job is not None:
+            try:
+                self.after_cancel(self._config_save_job)
+            except tk.TclError:
+                pass
+            self._config_save_job = None
         try:
             UI_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
             temporary = UI_CONFIG_FILE.with_suffix(".tmp")
@@ -2024,7 +2030,6 @@ class PhotoAssistantApp(tk.Tk):
         except OSError:
             # 外观配置写入失败不应影响照片处理功能。
             pass
-        self._config_save_job = None
 
     def _schedule_config_save(self) -> None:
         if self._config_save_job is not None:

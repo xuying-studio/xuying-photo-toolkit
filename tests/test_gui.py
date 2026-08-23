@@ -91,7 +91,7 @@ class GuiTests(unittest.TestCase):
                 pass
 
         self.addCleanup(cleanup_app)
-        app.update_idletasks()
+        app.update()
         return app
 
     def test_all_original_buttons_keep_commands(self) -> None:
@@ -196,7 +196,7 @@ class GuiTests(unittest.TestCase):
             app = self.make_app(Path(temp_dir) / "ui_config.json")
             for index in range(3):
                 app._tab_buttons[index].invoke()
-                app.update_idletasks()
+                app.update()
                 self.assertEqual(app.notebook.index(app.notebook.select()), index)
                 self.assertTrue(app._tab_buttons[index]._selected)
                 page = app.nametowidget(app.notebook.select())
@@ -317,7 +317,7 @@ class GuiTests(unittest.TestCase):
                     "撤回完成",
                 )
                 app._select_page(2)
-                app.update_idletasks()
+                app.update()
                 first_item = sync_page.tree.get_children()[0]
                 self.assertTrue(sync_page.tree.winfo_ismapped())
                 self.assertTrue(sync_page.tree.bbox(first_item))
