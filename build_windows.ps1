@@ -16,6 +16,21 @@ $ZipPath = Join-Path $DistDir "$AppName-windows-x64-portable.zip"
 $SetupPath = Join-Path $DistDir "$AppName-windows-x64-setup.exe"
 $ChecksumPath = Join-Path $DistDir "SHA256SUMS.txt"
 
+function Test-GuiExecutable {
+    param(
+        [string]$ExecutablePath,
+        [string]$Label
+    )
+
+    $Process = Start-Process -FilePath $ExecutablePath -PassThru
+    Start-Sleep -Seconds 5
+    if ($Process.HasExited) {
+        throw "$Label 启动冒烟测试失败，退出码：$($Process.ExitCode)"
+    }
+    Stop-Process -Id $Process.Id -Force
+    Wait-Process -Id $Process.Id -ErrorAction SilentlyContinue
+}
+
 if ($env:OS -ne "Windows_NT") {
     throw "Windows 安装包必须在 Windows 10/11 64 位环境中构建。"
 }
@@ -43,17 +58,13 @@ if (-not (Test-Path $PortableExe)) {
 }
 
 if (-not $SkipSmokeTest) {
-    $SmokeProcess = Start-Process -FilePath $PortableExe -PassThru
-    Start-Sleep -Seconds 5
-    if ($SmokeProcess.HasExited) {
-        throw "Windows 主程序启动冒烟测试失败，退出码：$($SmokeProcess.ExitCode)"
-    }
-    Stop-Process -Id $SmokeProcess.Id -Force
-    Wait-Process -Id $SmokeProcess.Id -ErrorAction SilentlyContinue
+    Test-GuiExecutable -ExecutablePath $PortableExe -Label "Windows 便携版"
 }
 
-if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
-Compress-Archive -Path $PortableDir -DestinationPath $ZipPath -CompressionLevel Optimal
+& $Python scripts/create_portable_zip.py $PortableDir $ZipPath
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path $ZipPath)) {
+    throw "便携版 ZIP 生成失败。"
+}
 
 if (-not $SkipInstaller) {
     $iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
@@ -61,6 +72,29 @@ if (-not $SkipInstaller) {
         & $iscc.Source "/DSourceDir=$PortableDir" "/DOutputDir=$DistDir" installer.iss
         if ($LASTEXITCODE -ne 0) { throw "Inno Setup 构建失败。" }
         if (-not (Test-Path $SetupPath)) { throw "未找到安装包：$SetupPath" }
+        if (-not $SkipSmokeTest) {
+            $SmokeInstallDir = Join-Path $env:TEMP "xuying-photo-toolkit-smoke-$PID"
+            $SetupProcess = Start-Process -FilePath $SetupPath -ArgumentList @(
+                "/VERYSILENT",
+                "/SUPPRESSMSGBOXES",
+                "/NORESTART",
+                "/SP-",
+                "/DIR=$SmokeInstallDir"
+            ) -Wait -PassThru
+            if ($SetupProcess.ExitCode -ne 0) { throw "Windows 安装版静默安装测试失败。" }
+            $InstalledExe = Join-Path $SmokeInstallDir "$AppName.exe"
+            if (-not (Test-Path $InstalledExe)) { throw "安装后未找到主程序。" }
+            Test-GuiExecutable -ExecutablePath $InstalledExe -Label "Windows 安装版"
+            $Uninstaller = Join-Path $SmokeInstallDir "unins000.exe"
+            if (Test-Path $Uninstaller) {
+                $UninstallProcess = Start-Process -FilePath $Uninstaller -ArgumentList @(
+                    "/VERYSILENT",
+                    "/SUPPRESSMSGBOXES",
+                    "/NORESTART"
+                ) -Wait -PassThru
+                if ($UninstallProcess.ExitCode -ne 0) { throw "Windows 安装版卸载测试失败。" }
+            }
+        }
     } else {
         Write-Warning "未找到 iscc.exe，已跳过 Setup.exe；便携版 ZIP 已生成。"
     }
