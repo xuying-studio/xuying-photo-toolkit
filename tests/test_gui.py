@@ -532,6 +532,16 @@ class GuiTests(unittest.TestCase):
                     page.winfo_rooty() + page.winfo_height(),
                 )
 
+    def test_initial_window_size_fits_common_small_and_large_screens(self) -> None:
+        self.assertEqual(
+            gui.PhotoAssistantApp._fit_initial_window_size(1024, 768),
+            (980, 680),
+        )
+        self.assertEqual(
+            gui.PhotoAssistantApp._fit_initial_window_size(1920, 1080),
+            (1180, 820),
+        )
+
     def test_windows_dark_mode_reads_system_app_theme(self) -> None:
         fake_key = mock.MagicMock()
         fake_key.__enter__.return_value = fake_key

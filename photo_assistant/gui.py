@@ -1944,7 +1944,11 @@ class PhotoAssistantApp(tk.Tk):
         self.font_stat_value = (display_font, 20, "bold")
 
         self.title(WINDOW_TITLE)
-        self.geometry("1180x820")
+        initial_width, initial_height = self._fit_initial_window_size(
+            self.winfo_screenwidth(),
+            self.winfo_screenheight(),
+        )
+        self.geometry(f"{initial_width}x{initial_height}")
         self.minsize(980, 680)
         self.configure(background=self.palette["window"])
         self._set_icon()
@@ -1952,6 +1956,17 @@ class PhotoAssistantApp(tk.Tk):
         self._build_ui()
         self._apply_opacity(self.opacity_percent)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    @staticmethod
+    def _fit_initial_window_size(
+        screen_width: int,
+        screen_height: int,
+    ) -> tuple[int, int]:
+        """在小屏幕上缩小初始窗口，避免被任务栏或屏幕边缘遮挡。"""
+
+        width = max(980, min(1180, screen_width - 48))
+        height = max(680, min(820, screen_height - 88))
+        return width, height
 
     def _set_icon(self) -> None:
         icon_path = Path(__file__).resolve().parent.parent / "assets" / "app_icon.png"
