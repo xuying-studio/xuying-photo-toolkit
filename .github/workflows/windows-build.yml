@@ -1,0 +1,40 @@
+name: Windows build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/win-app
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          architecture: x64
+      - name: 安装依赖
+        shell: pwsh
+        run: python -m pip install -r requirements.txt
+      - name: 安装 Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+      - name: 构建便携版和安装版
+        shell: pwsh
+        run: .\build_windows.ps1 -Python python
+      - name: 上传 Windows 构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-builds
+          path: |
+            dist-windows/*.zip
+            dist-windows/*.exe
+            dist-windows/SHA256SUMS.txt
+          retention-days: 14

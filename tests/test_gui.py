@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 import threading
 import tkinter as tk
@@ -530,6 +531,20 @@ class GuiTests(unittest.TestCase):
                     page.progress.winfo_rooty() + page.progress.winfo_height(),
                     page.winfo_rooty() + page.winfo_height(),
                 )
+
+    def test_windows_dark_mode_reads_system_app_theme(self) -> None:
+        fake_key = mock.MagicMock()
+        fake_key.__enter__.return_value = fake_key
+        fake_registry = mock.Mock()
+        fake_registry.HKEY_CURRENT_USER = object()
+        fake_registry.OpenKey.return_value = fake_key
+        fake_registry.QueryValueEx.return_value = (0, None)
+
+        with mock.patch.object(gui.sys, "platform", "win32"), mock.patch.dict(
+            sys.modules,
+            {"winreg": fake_registry},
+        ):
+            self.assertTrue(gui.PhotoAssistantApp._detect_dark_mode())
 
 
 if __name__ == "__main__":

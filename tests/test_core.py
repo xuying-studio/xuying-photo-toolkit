@@ -106,6 +106,81 @@ class RenameTests(unittest.TestCase):
 
 
 class CleanupTests(unittest.TestCase):
+    def test_windows_app_data_uses_roaming_profile(self) -> None:
+        roaming = str(Path("C:/Users/test/AppData/Roaming"))
+        with mock.patch.object(core.sys, "platform", "win32"), mock.patch.dict(
+            core.os.environ,
+            {"APPDATA": roaming},
+        ):
+            self.assertEqual(
+                core.app_data_dir("旭影的摄影工具集"),
+                Path(roaming) / "旭影的摄影工具集",
+            )
+
+    def test_windows_trash_is_managed_by_system_api(self) -> None:
+        with mock.patch.object(core.sys, "platform", "win32"):
+            self.assertIsNone(core._trash_dir_for_path(Path("C:/照片/A001.jpg")))
+
+    def test_windows_restore_fallback_never_calls_finder(self) -> None:
+        with mock.patch.object(core.sys, "platform", "win32"), mock.patch.object(
+            core,
+            "_restore_with_finder",
+        ) as finder_mock:
+            succeeded, error = core._restore_with_platform_fallback(
+                Path("C:/照片/A001.jpg")
+            )
+
+        self.assertFalse(succeeded)
+        self.assertIn("Windows 回收站", error or "")
+        finder_mock.assert_not_called()
+
+    def test_windows_cleanup_restores_from_safety_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            photo = root / "A001.jpg"
+            recycle_bin = root / "模拟回收站"
+            recycle_bin.mkdir()
+            photo.write_bytes(MINIMAL_JPEG)
+            undo_file = root / "cleanup_undo.json"
+
+            def fake_send_to_trash(path: str) -> None:
+                Path(path).rename(recycle_bin / Path(path).name)
+
+            with mock.patch.object(core.sys, "platform", "win32"), mock.patch.object(
+                core,
+                "APP_SUPPORT_DIR",
+                root,
+            ), mock.patch.object(
+                core,
+                "RENAME_BACKUP_DIR",
+                root / "rename",
+            ), mock.patch.object(
+                core,
+                "XMP_BACKUP_DIR",
+                root / "xmp",
+            ), mock.patch.object(
+                core,
+                "CLEANUP_UNDO_FILE",
+                undo_file,
+            ), mock.patch.object(
+                core,
+                "send2trash",
+                side_effect=fake_send_to_trash,
+            ):
+                moved, errors = core.move_cleanup_items_to_trash(
+                    [core.CleanupItem(str(photo), "RAW")]
+                )
+                self.assertEqual(moved, 1)
+                self.assertFalse(errors)
+                record = json.loads(undo_file.read_text(encoding="utf-8"))["items"][0]
+                self.assertIsNone(record["trash_path"])
+
+                restored, restore_errors = core.restore_latest_cleanup()
+
+            self.assertEqual(restored, 1)
+            self.assertFalse(restore_errors)
+            self.assertTrue(photo.exists())
+
     def test_recursive_case_insensitive_pairing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

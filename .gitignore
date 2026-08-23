@@ -12,6 +12,8 @@ htmlcov/
 # 构建产物与本地发布包
 build/
 dist/
+build-windows/
+dist-windows/
 *.spec.bak
 
 # macOS 与编辑器

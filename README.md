@@ -1,10 +1,11 @@
 <div align="center">
   <h1>📷 旭影的摄影工具集</h1>
   <p>给摄影工作流一键装上「整理、配对、同步」能力。</p>
-  <p>把按拍摄时间重命名、RAW/JPG 配对清理、Adobe Bridge 星标与颜色标签同步，收进一个克制、安全的 macOS 图形界面。</p>
+  <p>把按拍摄时间重命名、RAW/JPG 配对清理、Adobe Bridge 星标与颜色标签同步，收进一个克制、安全的 macOS 与 Windows 图形界面。</p>
   <p>
     <a href="LICENSE"><img src="https://img.shields.io/github/license/xuying-studio/xuying-photo-toolkit?style=flat-square" alt="MIT License"></a>
     <img src="https://img.shields.io/badge/macOS-11%2B-000000?style=flat-square&amp;logo=apple" alt="macOS 11+">
+    <img src="https://img.shields.io/badge/Windows-10%2F11-0078D4?style=flat-square&amp;logo=windows11&amp;logoColor=white" alt="Windows 10/11 x64">
     <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Python 3.10+">
   </p>
   <p>
@@ -68,7 +69,7 @@
 | 🔒 隐私 | 所有照片、文件路径和元数据只在本机处理；应用没有上传、同步或发送照片的功能。 |
 | 👀 先预览 | 三个功能都必须先扫描，列表和统计信息会在执行前展示出来。 |
 | 🛡️ 不覆盖 | 重命名遇到目标已存在或目标冲突时会直接停止，不会静默覆盖。 |
-| 🗑️ 不永久删除 | 配对清理只移入 macOS 废纸篓，并保留本地安全恢复副本。 |
+| 🗑️ 不永久删除 | 配对清理只移入系统回收站或废纸篓，并保留本地安全恢复副本。 |
 | ↩️ 可撤回 | 重命名、清理恢复和 XMP 同步都保留最近一次操作的恢复能力。 |
 | 📷 尊重 RAW | RAW 原始文件永远不直接写入；元数据只通过 `.xmp` 侧车处理。 |
 
@@ -77,6 +78,17 @@
 ---
 
 ## 🚀 快速开始
+
+### 直接使用 Windows 测试版
+
+Windows 10/11 64 位用户可选择以下任一种方式：
+
+1. 安装版：运行 `旭影的摄影工具集-windows-x64-setup.exe`。
+2. 便携版：解压 `旭影的摄影工具集-windows-x64-portable.zip`，双击其中的 `旭影的摄影工具集.exe`。
+
+两种版本都已包含 Python 和运行依赖，用户电脑无需另外安装开发环境，也无需管理员权限。
+
+> 当前测试版未进行 Windows 代码签名。首次打开时可能出现 SmartScreen 提示，请核对文件来源后选择“更多信息 → 仍要运行”。正式公开分发前建议完成代码签名。
 
 ### 直接使用 macOS App
 
@@ -88,7 +100,7 @@
 
 ### 从源码运行
 
-要求：macOS 11 或更高版本、Python 3.10 或更高版本，以及系统自带的 Tkinter。
+要求：macOS 11 或 Windows 10/11 64 位、Python 3.10 或更高版本，以及可用的 Tkinter。
 
 ```bash
 git clone https://github.com/xuying-studio/xuying-photo-toolkit.git
@@ -145,7 +157,7 @@ DSC26-07-25-00001.xmp
 A001.JPG  ↔  a001.ARW
 ```
 
-文件不会被永久删除，而是移入mac的废纸篓；恢复时优先使用隐藏安全恢复副本，必要时才请求 Finder 协助。
+文件不会被永久删除，而是移入系统回收站或废纸篓；恢复时优先使用隐藏安全恢复副本。macOS 在备份不可用时还会尝试请求 Finder 协助；Windows 会提示用户从回收站手动还原。
 
 ### ⭐ Adobe Bridge 星标与颜色同步
 
@@ -166,7 +178,7 @@ A001.JPG  ↔  a001.ARW
 
 ## 🎨 外观与本地数据
 
-应用会跟随 macOS 浅色/深色外观。右上角“外观…”支持 70%–100% 界面透明度，默认 92%，调整可即时预览。
+应用会跟随 macOS 或 Windows 浅色/深色外观。右上角“外观…”支持 70%–100% 界面透明度，默认 92%，调整可即时预览。
 
 透明度设置保存在：
 
@@ -174,11 +186,19 @@ A001.JPG  ↔  a001.ARW
 ~/Library/Application Support/旭影的摄影工具集/ui_config.json
 ```
 
+Windows 配置保存在：
+
+```text
+%APPDATA%\旭影的摄影工具集\ui_config.json
+```
+
 为兼容旧版本的撤回记录，业务备份目录保留历史名称。具体位置和清理恢复机制请参阅[详细使用说明的本地数据章节](docs/使用说明.md#8-本地数据与隐私)。
 
 ---
 
 ## 🧰 从源码构建
+
+### macOS
 
 ```bash
 chmod +x build_app.sh
@@ -198,6 +218,22 @@ APPLE_SIGN_IDENTITY="Developer ID Application: 你的名称 (TEAMID)" \
 APPLE_NOTARY_PROFILE="你的-notarytool-profile" \
 ./build_app.sh
 ```
+
+### Windows 10/11 x64
+
+请在 64 位 Windows 环境中安装 Python 3.10 与 Inno Setup，然后运行：
+
+```powershell
+py -3.10 -m pip install -r requirements.txt
+.\build_windows.ps1
+```
+
+脚本会先执行全部测试，再生成：
+
+- `dist-windows/旭影的摄影工具集-windows-x64-portable.zip`
+- `dist-windows/旭影的摄影工具集-windows-x64-setup.exe`
+
+也可以在 GitHub Actions 中手动运行 `Windows build`，由 Windows 2022 构建机生成相同的未签名测试包。
 
 ---
 

@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -25,7 +26,23 @@ from send2trash import send2trash
 
 APP_NAME = "旭影的摄影工具集"
 # 保留旧数据目录，确保改名后仍可撤回之前的重命名、清理和 XMP 同步。
-APP_SUPPORT_DIR = Path.home() / "Library" / "Application Support" / "摄影文件后期处理助手"
+
+
+def app_data_dir(app_name: str) -> Path:
+    """返回当前系统适合保存用户级应用数据的目录。"""
+
+    if sys.platform == "win32":
+        roaming = os.environ.get("APPDATA")
+        if roaming:
+            return Path(roaming) / app_name
+        return Path.home() / "AppData" / "Roaming" / app_name
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / app_name
+    config_home = os.environ.get("XDG_CONFIG_HOME")
+    return (Path(config_home) if config_home else Path.home() / ".config") / app_name
+
+
+APP_SUPPORT_DIR = app_data_dir("摄影文件后期处理助手")
 RENAME_BACKUP_DIR = APP_SUPPORT_DIR / "rename_backups"
 XMP_BACKUP_DIR = APP_SUPPORT_DIR / "xmp_backups"
 CLEANUP_UNDO_FILE = APP_SUPPORT_DIR / "cleanup_undo.json"
@@ -540,6 +557,7 @@ def move_cleanup_items_to_trash(
             relative_path = source.relative_to(common_root)
             recovery_path = recovery_root / relative_path
             recovery_path.parent.mkdir(parents=True, exist_ok=True)
+            _hide_windows_recovery_dir(recovery_root)
             try:
                 # 同卷硬链接不额外占用照片空间，同时保留完整可恢复内容。
                 os.link(source, recovery_path)
@@ -594,6 +612,31 @@ def _apple_script_escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
+def _hide_windows_recovery_dir(path: Path) -> None:
+    """在 Windows 上把安全恢复目录标记为隐藏，失败时不影响清理。"""
+
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        hidden_attribute = 0x02
+        invalid_attributes = 0xFFFFFFFF
+        kernel32 = ctypes.windll.kernel32
+        kernel32.GetFileAttributesW.argtypes = [ctypes.c_wchar_p]
+        kernel32.GetFileAttributesW.restype = ctypes.c_uint32
+        kernel32.SetFileAttributesW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32]
+        kernel32.SetFileAttributesW.restype = ctypes.c_int
+        current = kernel32.GetFileAttributesW(str(path))
+        if current != invalid_attributes:
+            kernel32.SetFileAttributesW(
+                str(path),
+                current | hidden_attribute,
+            )
+    except Exception:
+        pass
+
+
 def _mount_point_for_path(path: Path) -> Path:
     """根据设备号找到路径所在卷的挂载点。"""
 
@@ -610,8 +653,11 @@ def _mount_point_for_path(path: Path) -> Path:
     return current
 
 
-def _trash_dir_for_path(path: Path) -> Path:
-    """返回指定文件所在卷对应的当前用户废纸篓。"""
+def _trash_dir_for_path(path: Path) -> Path | None:
+    """返回可直接访问的废纸篓目录；Windows 由系统接口管理。"""
+
+    if sys.platform == "win32":
+        return None
 
     mount_point = _mount_point_for_path(path)
     if mount_point == Path("/"):
@@ -620,12 +666,15 @@ def _trash_dir_for_path(path: Path) -> Path:
 
 
 def _find_trashed_file(
-    trash_dir: Path,
+    trash_dir: Path | None,
     device: int | None,
     inode: int | None,
     original_name: str,
 ) -> Path | None:
     """优先按 inode 找到刚移入废纸篓的真实路径。"""
+
+    if trash_dir is None:
+        return None
 
     exact = trash_dir / original_name
     if exact.exists():
@@ -682,6 +731,19 @@ end tell
         return True, None
     detail = result.stderr.strip() or result.stdout.strip() or f"错误码 {result.returncode}"
     return False, detail
+
+
+def _restore_with_platform_fallback(original: Path) -> tuple[bool, str | None]:
+    """在安全备份不可用时使用当前系统提供的最后恢复方式。"""
+
+    if sys.platform == "darwin":
+        return _restore_with_finder(original)
+    if sys.platform == "win32":
+        return (
+            False,
+            "安全恢复副本不可用，请打开 Windows 回收站并手动还原该文件。",
+        )
+    return False, "安全恢复副本不可用，请从系统回收站手动还原该文件。"
 
 
 def _remove_empty_recovery_dirs(start: Path) -> None:
@@ -791,7 +853,7 @@ def restore_latest_cleanup(
                 # 直接访问可能被 macOS 隐私权限阻止，继续交给 Finder。
                 pass
 
-        succeeded, detail = _restore_with_finder(original)
+        succeeded, detail = _restore_with_platform_fallback(original)
         if succeeded:
             restored += 1
         else:

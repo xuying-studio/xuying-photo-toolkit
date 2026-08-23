@@ -24,18 +24,13 @@ MAX_ACTIVITY_ROWS = 300
 DEFAULT_OPACITY = 92
 MIN_OPACITY = 70
 MAX_OPACITY = 100
+POINTER_CURSOR = "hand2" if sys.platform == "win32" else "pointinghand"
 UI_CONFIG_FILE = (
-    Path.home()
-    / "Library"
-    / "Application Support"
-    / WINDOW_TITLE
+    core.app_data_dir(WINDOW_TITLE)
     / "ui_config.json"
 )
 LEGACY_UI_CONFIG_FILE = (
-    Path.home()
-    / "Library"
-    / "Application Support"
-    / LEGACY_WINDOW_TITLE
+    core.app_data_dir(LEGACY_WINDOW_TITLE)
     / "ui_config.json"
 )
 
@@ -120,6 +115,30 @@ def _rounded_points(width: int, height: int, radius: int) -> list[int]:
     ]
 
 
+def _enable_windows_dpi_awareness() -> None:
+    """让 Windows 高分屏按真实缩放比例绘制，避免界面模糊。"""
+
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        # Windows 10 优先使用每显示器 DPI 感知；旧版本自动降级。
+        if ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
+            return
+    except Exception:
+        pass
+    try:
+        import ctypes
+
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    except Exception:
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
+
+
 class RoundedButton(tk.Canvas):
     """带悬停、按下、聚焦和禁用状态的圆角按钮。"""
 
@@ -159,7 +178,7 @@ class RoundedButton(tk.Canvas):
             highlightthickness=0,
             borderwidth=0,
             takefocus=1,
-            cursor="pointinghand",
+            cursor=POINTER_CURSOR,
         )
         self.bind("<Configure>", self._draw)
         self.bind("<Enter>", self._on_enter)
@@ -387,7 +406,7 @@ class RoundedSelect(tk.Canvas):
             highlightthickness=0,
             borderwidth=0,
             takefocus=1,
-            cursor="pointinghand",
+            cursor=POINTER_CURSOR,
         )
         self._variable.trace_add("write", lambda *_: self._draw())
         self.bind("<Configure>", self._draw)
@@ -485,7 +504,7 @@ class RoundedCheckbutton(tk.Canvas):
             highlightthickness=0,
             borderwidth=0,
             takefocus=1,
-            cursor="pointinghand",
+            cursor=POINTER_CURSOR,
         )
         self._variable.trace_add("write", lambda *_: self._draw())
         self.bind("<Configure>", self._draw)
@@ -1333,7 +1352,10 @@ class CleanupPage(BasePage):
         )
         ttk.Label(
             self.content,
-            text="递归检查同一文件夹内的同名照片；移入废纸篓前创建隐藏安全备份，恢复不依赖 Finder。",
+            text=(
+                "递归检查同一文件夹内的同名照片；移入废纸篓前创建隐藏安全备份，"
+                "恢复不依赖直接访问废纸篓。"
+            ),
             style="Muted.TLabel",
         ).pack(anchor=tk.W, pady=(5, 16))
 
@@ -1545,10 +1567,21 @@ class CleanupPage(BasePage):
         messagebox.showinfo("清理完成", text, parent=self)
 
     def restore(self) -> None:
+        if sys.platform == "darwin":
+            confirmation = (
+                "将优先通过隐藏安全备份恢复最近一次清理的文件。\n"
+                "备份不可用时，macOS 可能询问是否允许控制 Finder。"
+            )
+        elif sys.platform == "win32":
+            confirmation = (
+                "将通过隐藏安全备份恢复最近一次清理的文件。\n"
+                "如果安全备份不可用，程序会提示你从 Windows 回收站手动还原。"
+            )
+        else:
+            confirmation = "将通过隐藏安全备份恢复最近一次清理的文件，是否继续？"
         if not messagebox.askyesno(
             "确认恢复",
-            "将通过 Finder 尝试恢复最近一次清理的文件。\n"
-            "macOS 可能会询问是否允许控制 Finder。",
+            confirmation,
             parent=self,
         ):
             return
@@ -1900,13 +1933,15 @@ class PhotoAssistantApp(tk.Tk):
         # 三个工具共用同一照片文件夹路径，切换页面时无需重复选择。
         self.shared_folder_var = tk.StringVar(master=self)
 
-        # SF Pro 使用可识别的字体族名称，中文字符由系统自动回退到苹方。
-        self.font_title = ("SF Pro Display", 18, "bold")
-        self.font_page_title = ("SF Pro Display", 21, "bold")
-        self.font_body = ("SF Pro Text", 12)
-        self.font_body_medium = ("SF Pro Text", 12, "bold")
-        self.font_caption = ("SF Pro Text", 11)
-        self.font_stat_value = ("SF Pro Display", 20, "bold")
+        # 使用各系统自带字体，保持现有字号、字重和布局，不额外分发字体文件。
+        display_font = "Segoe UI" if sys.platform == "win32" else "SF Pro Display"
+        text_font = "Segoe UI" if sys.platform == "win32" else "SF Pro Text"
+        self.font_title = (display_font, 18, "bold")
+        self.font_page_title = (display_font, 21, "bold")
+        self.font_body = (text_font, 12)
+        self.font_body_medium = (text_font, 12, "bold")
+        self.font_caption = (text_font, 11)
+        self.font_stat_value = (display_font, 20, "bold")
 
         self.title(WINDOW_TITLE)
         self.geometry("1180x820")
@@ -1931,19 +1966,31 @@ class PhotoAssistantApp(tk.Tk):
     def _detect_dark_mode() -> bool:
         """启动时读取系统外观；读取失败时使用浅色模式。"""
 
-        if sys.platform != "darwin":
-            return False
-        try:
-            result = subprocess.run(
-                ["defaults", "read", "-g", "AppleInterfaceStyle"],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-            return result.stdout.strip().casefold() == "dark"
-        except Exception:
-            return False
+        if sys.platform == "darwin":
+            try:
+                result = subprocess.run(
+                    ["defaults", "read", "-g", "AppleInterfaceStyle"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                )
+                return result.stdout.strip().casefold() == "dark"
+            except Exception:
+                return False
+        if sys.platform == "win32":
+            try:
+                import winreg
+
+                key_path = (
+                    r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+                )
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+                    value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+                return int(value) == 0
+            except Exception:
+                return False
+        return False
 
     @staticmethod
     def _load_opacity() -> int:
@@ -2483,5 +2530,6 @@ class PhotoAssistantApp(tk.Tk):
 def run() -> None:
     """启动应用。"""
 
+    _enable_windows_dpi_awareness()
     app = PhotoAssistantApp()
     app.mainloop()
