@@ -831,10 +831,14 @@ def _find_windows_recycled_path(
     search_deadline = time.monotonic() + 5
     last_observed = 0
     last_errors = 0
+    last_name_matches = 0
+    last_parent_matches = 0
     while time.monotonic() < search_deadline:
         candidates: list[tuple[float, float, str]] = []
         last_observed = 0
         last_errors = 0
+        last_name_matches = 0
+        last_parent_matches = 0
         enum_items = recycle_folder.EnumObjects(0, enum_flags)
         while enum_items is not None:
             pidls = enum_items.Next(1)
@@ -857,13 +861,19 @@ def _find_windows_recycled_path(
                     )
                     or ""
                 )
-                if (
+                name_matches = (
                     _windows_path_key(original_name)
-                    != _windows_path_key(original.name)
-                    or not _same_windows_directory(
-                        deleted_from,
-                        original.parent,
-                    )
+                    == _windows_path_key(original.name)
+                )
+                parent_matches = _same_windows_directory(
+                    deleted_from,
+                    original.parent,
+                )
+                last_name_matches += int(name_matches)
+                last_parent_matches += int(parent_matches)
+                if (
+                    not name_matches
+                    or not parent_matches
                 ):
                     continue
 
@@ -902,7 +912,8 @@ def _find_windows_recycled_path(
     return (
         None,
         "Windows 回收站中未找到对应文件，可能已被清空或手动处理。"
-        f"（检查 {last_observed} 项，属性读取失败 {last_errors} 项）",
+        f"（检查 {last_observed} 项，文件名匹配 {last_name_matches} 项，"
+        f"原目录匹配 {last_parent_matches} 项，属性读取失败 {last_errors} 项）",
     )
 
 
