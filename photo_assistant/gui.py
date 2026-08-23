@@ -1346,16 +1346,25 @@ class CleanupPage(BasePage):
             folder_var if folder_var is not None else tk.StringVar(master=self)
         )
         self.kind_var = tk.StringVar(value="JPG")
+        self.trash_name = "回收站" if sys.platform == "win32" else "废纸篓"
+
+        if sys.platform == "win32":
+            cleanup_description = (
+                "递归检查同一文件夹内的同名照片；待清理文件直接移入 Windows 回收站，"
+                "不在原文件夹创建额外备份。"
+            )
+        else:
+            cleanup_description = (
+                "递归检查同一文件夹内的同名照片；移入废纸篓前创建隐藏安全备份，"
+                "恢复不依赖直接访问废纸篓。"
+            )
 
         ttk.Label(self.content, text="RAW / JPG 配对清理", style="PageTitle.TLabel").pack(
             anchor=tk.W
         )
         ttk.Label(
             self.content,
-            text=(
-                "递归检查同一文件夹内的同名照片；移入废纸篓前创建隐藏安全备份，"
-                "恢复不依赖直接访问废纸篓。"
-            ),
+            text=cleanup_description,
             style="Muted.TLabel",
         ).pack(anchor=tk.W, pady=(5, 16))
 
@@ -1423,7 +1432,7 @@ class CleanupPage(BasePage):
         ).pack(side=tk.LEFT)
         self.create_button(
             action_row,
-            text="移入废纸篓",
+            text=f"移入{self.trash_name}",
             command=self.execute,
             role="danger",
             width=130,
@@ -1514,8 +1523,8 @@ class CleanupPage(BasePage):
             messagebox.showwarning("提示", "请先扫描，没有待清理项目。", parent=self)
             return
         if not messagebox.askyesno(
-            "确认移入废纸篓",
-            f"将把 {len(self.items)} 个文件移入废纸篓。\n\n"
+            f"确认移入{self.trash_name}",
+            f"将把 {len(self.items)} 个文件移入{self.trash_name}。\n\n"
             "不会永久删除，是否继续？",
             icon="warning",
             parent=self,
@@ -1524,7 +1533,7 @@ class CleanupPage(BasePage):
         items = self.items.copy()
         self.begin_activity(self.tree, ("正在准备清理", "等待执行"))
         self.run_job(
-            "正在移入废纸篓…",
+            f"正在移入{self.trash_name}…",
             lambda progress: core.move_cleanup_items_to_trash(
                 items,
                 progress=progress,
@@ -1555,13 +1564,15 @@ class CleanupPage(BasePage):
             [
                 (
                     _display_filename(item.path),
-                    "处理失败" if item.path in failed_paths else "已移入废纸篓",
+                    "处理失败"
+                    if item.path in failed_paths
+                    else f"已移入{self.trash_name}",
                 )
                 for item in items
             ],
         )
-        self.status_var.set(f"已移入废纸篓 {moved} 个文件")
-        text = f"已移入废纸篓 {moved} 个文件。"
+        self.status_var.set(f"已移入{self.trash_name} {moved} 个文件")
+        text = f"已移入{self.trash_name} {moved} 个文件。"
         if errors:
             text += f"\n\n有 {len(errors)} 个文件处理失败：\n" + "\n".join(errors[:8])
         messagebox.showinfo("清理完成", text, parent=self)
@@ -1574,8 +1585,8 @@ class CleanupPage(BasePage):
             )
         elif sys.platform == "win32":
             confirmation = (
-                "将通过隐藏安全备份恢复最近一次清理的文件。\n"
-                "如果安全备份不可用，程序会提示你从 Windows 回收站手动还原。"
+                "将把最近一次清理的文件直接从 Windows 回收站还原到原位置。\n"
+                "如果回收站已被清空，对应文件将无法恢复。"
             )
         else:
             confirmation = "将通过隐藏安全备份恢复最近一次清理的文件，是否继续？"
@@ -1587,7 +1598,7 @@ class CleanupPage(BasePage):
             return
         self.begin_activity(self.tree, ("正在读取清理记录", "等待恢复"))
         self.run_job(
-            "正在从废纸篓恢复…",
+            f"正在从{self.trash_name}恢复…",
             lambda progress: core.restore_latest_cleanup(progress=progress),
             self._restore_finished,
             on_progress=self._show_cleanup_activity,
@@ -1602,7 +1613,10 @@ class CleanupPage(BasePage):
         self.status_var.set(f"已恢复 {restored} 个文件")
         text = f"已恢复 {restored} 个文件。"
         if restored:
-            text += "\n\n废纸篓中可能仍保留同一文件的安全副本，确认照片正常后可照常清空废纸篓。"
+            if sys.platform == "win32":
+                text += "\n\n文件已从 Windows 回收站移回原位置。"
+            else:
+                text += "\n\n废纸篓中可能仍保留同一文件的安全副本，确认照片正常后可照常清空废纸篓。"
         if errors:
             text += f"\n\n有 {len(errors)} 个文件未恢复：\n" + "\n".join(errors[:8])
         messagebox.showinfo("恢复结果", text, parent=self)
@@ -1933,11 +1947,16 @@ class PhotoAssistantApp(tk.Tk):
         # 三个工具共用同一照片文件夹路径，切换页面时无需重复选择。
         self.shared_folder_var = tk.StringVar(master=self)
 
-        # 使用各系统自带字体，保持现有字号、字重和布局，不额外分发字体文件。
-        display_font = "Segoe UI" if sys.platform == "win32" else "SF Pro Display"
-        text_font = "Segoe UI" if sys.platform == "win32" else "SF Pro Text"
+        # Windows 11 优先使用系统 Fluent 字体，Windows 10 自动回退到 Segoe UI。
+        if sys.platform == "win32":
+            windows_font = self._select_windows_font(tkfont.families(self))
+            display_font = windows_font
+            text_font = windows_font
+        else:
+            display_font = "SF Pro Display"
+            text_font = "SF Pro Text"
         self.font_title = (display_font, 18, "bold")
-        self.font_page_title = (display_font, 21, "bold")
+        self.font_page_title = (display_font, 20, "bold")
         self.font_body = (text_font, 12)
         self.font_body_medium = (text_font, 12, "bold")
         self.font_caption = (text_font, 11)
@@ -1956,6 +1975,16 @@ class PhotoAssistantApp(tk.Tk):
         self._build_ui()
         self._apply_opacity(self.opacity_percent)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    @staticmethod
+    def _select_windows_font(available_families: tuple[str, ...]) -> str:
+        """按 Windows 11、Windows 10、简体中文系统字体顺序选择。"""
+
+        available = {family.casefold(): family for family in available_families}
+        for candidate in ("Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI"):
+            if candidate.casefold() in available:
+                return available[candidate.casefold()]
+        return "Segoe UI"
 
     @staticmethod
     def _fit_initial_window_size(

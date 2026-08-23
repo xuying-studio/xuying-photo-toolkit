@@ -9,11 +9,13 @@ from __future__ import annotations
 import base64
 import html
 import json
+import ntpath
 import os
 import re
 import shutil
 import subprocess
 import sys
+import time
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -22,6 +24,13 @@ from typing import Callable, Iterable
 
 import exifread
 from send2trash import send2trash
+
+if sys.platform == "win32":
+    import pythoncom as _pythoncom
+    import win32com.client as _win32_client
+else:
+    _pythoncom = None
+    _win32_client = None
 
 
 APP_NAME = "旭影的摄影工具集"
@@ -532,9 +541,10 @@ def move_cleanup_items_to_trash(
     items: list[CleanupItem],
     progress: ProgressCallback | None = None,
 ) -> tuple[int, list[str]]:
-    """将清理项移入废纸篓，并保存可恢复记录。"""
+    """将清理项移入系统回收站或废纸篓，并保存可恢复记录。"""
 
     total_items = len(items)
+    trash_name = "回收站" if sys.platform == "win32" else "废纸篓"
     _report_progress(progress, 0, total_items, f"正在准备清理 0/{total_items}")
     if not items:
         return 0, []
@@ -542,48 +552,61 @@ def move_cleanup_items_to_trash(
     moved: list[str] = []
     moved_items: list[dict[str, object]] = []
     errors: list[str] = []
-    common_root = Path(
-        os.path.commonpath([str(Path(item.path).parent) for item in items])
-    )
-    session_id = datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
-    recovery_root = common_root / RECOVERY_DIR_NAME / session_id
+    common_root: Path | None = None
+    recovery_root: Path | None = None
+    if sys.platform != "win32":
+        common_root = Path(
+            os.path.commonpath([str(Path(item.path).parent) for item in items])
+        )
+        session_id = datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
+        recovery_root = common_root / RECOVERY_DIR_NAME / session_id
 
     for index, item in enumerate(items, start=1):
         recovery_path: Path | None = None
         try:
             source = Path(item.path)
+            deleted_at = datetime.now().astimezone().isoformat()
+            trash_path: Path | None = None
             source_stat = source.stat()
-            trash_dir = _trash_dir_for_path(source)
-            relative_path = source.relative_to(common_root)
-            recovery_path = recovery_root / relative_path
-            recovery_path.parent.mkdir(parents=True, exist_ok=True)
-            _hide_windows_recovery_dir(recovery_root)
-            try:
-                # 同卷硬链接不额外占用照片空间，同时保留完整可恢复内容。
-                os.link(source, recovery_path)
-                recovery_method = "hardlink"
-            except OSError:
-                # 不支持硬链接的文件系统退回完整复制。
-                shutil.copy2(source, recovery_path)
-                recovery_method = "copy"
+            recovery_method: str | None = None
+
+            if sys.platform != "win32":
+                assert common_root is not None
+                assert recovery_root is not None
+                trash_dir = _trash_dir_for_path(source)
+                relative_path = source.relative_to(common_root)
+                recovery_path = recovery_root / relative_path
+                recovery_path.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    # 同卷硬链接不额外占用照片空间，同时保留完整可恢复内容。
+                    os.link(source, recovery_path)
+                    recovery_method = "hardlink"
+                except OSError:
+                    # 不支持硬链接的文件系统退回完整复制。
+                    shutil.copy2(source, recovery_path)
+                    recovery_method = "copy"
+
             send2trash(item.path)
             moved.append(item.path)
-            trash_path = _find_trashed_file(
-                trash_dir,
-                source_stat.st_dev,
-                source_stat.st_ino,
-                source.name,
-            )
+            if sys.platform != "win32":
+                trash_path = _find_trashed_file(
+                    trash_dir,
+                    source_stat.st_dev,
+                    source_stat.st_ino,
+                    source.name,
+                )
             moved_items.append(
                 {
                     "original_path": item.path,
+                    "deleted_at": deleted_at,
                     "trash_path": str(trash_path) if trash_path else None,
                     "device": source_stat.st_dev,
                     "inode": source_stat.st_ino,
-                    "recovery_path": str(recovery_path),
+                    "recovery_path": str(recovery_path) if recovery_path else None,
                     "recovery_method": recovery_method,
                 }
             )
+            _write_cleanup_undo(moved, moved_items)
         except Exception as exc:
             if recovery_path is not None:
                 recovery_path.unlink(missing_ok=True)
@@ -593,48 +616,32 @@ def move_cleanup_items_to_trash(
             progress,
             index,
             total_items,
-            f"正在移入废纸篓 {index}/{total_items} · {Path(item.path).name}",
-        )
-    if moved:
-        payload = {
-            "created_at": datetime.now().isoformat(),
-            "paths": moved,
-            "items": moved_items,
-        }
-        CLEANUP_UNDO_FILE.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
+            f"正在移入{trash_name} {index}/{total_items} · {Path(item.path).name}",
         )
     return len(moved), errors
 
 
+def _write_cleanup_undo(
+    moved_paths: list[str],
+    moved_items: list[dict[str, object]],
+) -> None:
+    """每成功移动一个文件就更新恢复记录，降低中途退出的风险。"""
+
+    payload = {
+        "created_at": datetime.now().astimezone().isoformat(),
+        "paths": moved_paths,
+        "items": moved_items,
+    }
+    temporary = CLEANUP_UNDO_FILE.with_suffix(".tmp")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    temporary.replace(CLEANUP_UNDO_FILE)
+
+
 def _apple_script_escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
-
-
-def _hide_windows_recovery_dir(path: Path) -> None:
-    """在 Windows 上把安全恢复目录标记为隐藏，失败时不影响清理。"""
-
-    if sys.platform != "win32":
-        return
-    try:
-        import ctypes
-
-        hidden_attribute = 0x02
-        invalid_attributes = 0xFFFFFFFF
-        kernel32 = ctypes.windll.kernel32
-        kernel32.GetFileAttributesW.argtypes = [ctypes.c_wchar_p]
-        kernel32.GetFileAttributesW.restype = ctypes.c_uint32
-        kernel32.SetFileAttributesW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32]
-        kernel32.SetFileAttributesW.restype = ctypes.c_int
-        current = kernel32.GetFileAttributesW(str(path))
-        if current != invalid_attributes:
-            kernel32.SetFileAttributesW(
-                str(path),
-                current | hidden_attribute,
-            )
-    except Exception:
-        pass
 
 
 def _mount_point_for_path(path: Path) -> Path:
@@ -733,17 +740,116 @@ end tell
     return False, detail
 
 
-def _restore_with_platform_fallback(original: Path) -> tuple[bool, str | None]:
-    """在安全备份不可用时使用当前系统提供的最后恢复方式。"""
+def _windows_path_key(value: str | Path) -> str:
+    """生成不区分大小写的 Windows 路径比较键。"""
+
+    return ntpath.normcase(ntpath.normpath(str(value)))
+
+
+def _restore_from_windows_recycle_bin(
+    original: Path,
+    deleted_at: str | None,
+) -> tuple[bool, str | None]:
+    """通过 Windows Shell 把匹配项目直接从回收站移回原目录。"""
+
+    if _pythoncom is None or _win32_client is None:
+        return False, "Windows 回收站组件不可用。"
+
+    recorded_time: datetime | None = None
+    if deleted_at:
+        try:
+            recorded_time = datetime.fromisoformat(deleted_at).replace(tzinfo=None)
+        except ValueError:
+            recorded_time = None
+
+    _pythoncom.CoInitialize()
+    try:
+        shell = _win32_client.Dispatch("Shell.Application")
+        recycle_bin = shell.NameSpace(10)
+        destination = shell.NameSpace(str(original.parent))
+        if recycle_bin is None:
+            return False, "无法访问 Windows 回收站。"
+        if destination is None:
+            return False, f"无法访问原文件夹：{original.parent}"
+
+        expected_path = _windows_path_key(original)
+        candidates: list[tuple[float, float, object]] = []
+        for recycled_item in recycle_bin.Items():
+            try:
+                deleted_from = str(
+                    recycled_item.ExtendedProperty("System.Recycle.DeletedFrom")
+                    or ""
+                )
+                property_name = str(
+                    recycled_item.ExtendedProperty("System.FileName") or ""
+                )
+                item_name = str(
+                    recycled_item.ExtendedProperty("System.ItemNameDisplay") or ""
+                )
+                display_name = str(recycled_item.Name or "")
+                item_names = {
+                    name
+                    for name in (property_name, item_name, display_name)
+                    if name
+                }
+                if not deleted_from or not any(
+                    _windows_path_key(ntpath.join(deleted_from, name)) == expected_path
+                    for name in item_names
+                ):
+                    continue
+
+                deleted_value = recycled_item.ExtendedProperty(
+                    "System.Recycle.DateDeleted"
+                )
+                deleted_time = (
+                    deleted_value.replace(tzinfo=None)
+                    if isinstance(deleted_value, datetime)
+                    else None
+                )
+                distance = (
+                    abs((deleted_time - recorded_time).total_seconds())
+                    if deleted_time is not None and recorded_time is not None
+                    else float("inf")
+                )
+                recency = (
+                    -deleted_time.timestamp() if deleted_time is not None else 0.0
+                )
+                candidates.append((distance, recency, recycled_item))
+            except Exception:
+                continue
+
+        if not candidates:
+            return False, "Windows 回收站中未找到对应文件，可能已被清空或手动处理。"
+
+        matched_item = min(candidates, key=lambda value: (value[0], value[1]))[2]
+        # 禁止覆盖和错误弹窗；原位置已有文件会在调用前被业务层拦截。
+        destination.MoveHere(matched_item, 4 | 16 | 1024)
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            if original.exists():
+                return True, None
+            time.sleep(0.1)
+        return False, "Windows 已执行还原，但在原位置未检测到文件。"
+    except Exception as exc:
+        return False, f"Windows 回收站还原失败：{exc}"
+    finally:
+        _pythoncom.CoUninitialize()
+
+
+def _restore_with_platform_fallback(
+    original: Path,
+    record: dict[str, object],
+) -> tuple[bool, str | None]:
+    """使用当前系统提供的回收站恢复方式。"""
 
     if sys.platform == "darwin":
         return _restore_with_finder(original)
     if sys.platform == "win32":
-        return (
-            False,
-            "安全恢复副本不可用，请打开 Windows 回收站并手动还原该文件。",
+        return _restore_from_windows_recycle_bin(
+            original,
+            str(record.get("deleted_at")) if record.get("deleted_at") else None,
         )
-    return False, "安全恢复副本不可用，请从系统回收站手动还原该文件。"
+    return False, "请从系统回收站手动还原该文件。"
 
 
 def _remove_empty_recovery_dirs(start: Path) -> None:
@@ -764,7 +870,7 @@ def _remove_empty_recovery_dirs(start: Path) -> None:
 def restore_latest_cleanup(
     progress: ProgressCallback | None = None,
 ) -> tuple[int, list[str]]:
-    """通过 Finder 尝试恢复最近一次移入废纸篓的文件。"""
+    """恢复最近一次移入系统回收站或废纸篓的文件。"""
 
     if not CLEANUP_UNDO_FILE.exists():
         raise FileNotFoundError("没有可恢复的清理记录。")
@@ -853,7 +959,7 @@ def restore_latest_cleanup(
                 # 直接访问可能被 macOS 隐私权限阻止，继续交给 Finder。
                 pass
 
-        succeeded, detail = _restore_with_platform_fallback(original)
+        succeeded, detail = _restore_with_platform_fallback(original, record)
         if succeeded:
             restored += 1
         else:

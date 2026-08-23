@@ -556,6 +556,34 @@ class GuiTests(unittest.TestCase):
         ):
             self.assertTrue(gui.PhotoAssistantApp._detect_dark_mode())
 
+    def test_windows_font_prefers_variable_system_family(self) -> None:
+        self.assertEqual(
+            gui.PhotoAssistantApp._select_windows_font(
+                ("Arial", "Segoe UI", "Segoe UI Variable")
+            ),
+            "Segoe UI Variable",
+        )
+        self.assertEqual(
+            gui.PhotoAssistantApp._select_windows_font(("Arial", "Segoe UI")),
+            "Segoe UI",
+        )
+
+    def test_windows_cleanup_page_uses_recycle_bin_language(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch.object(
+            gui.sys,
+            "platform",
+            "win32",
+        ):
+            app = self.make_app(Path(temp_dir) / "ui_config.json")
+            cleanup_page = app.notebook.winfo_children()[1]
+            texts = [
+                widget.cget("text")
+                for widget in all_descendants(cleanup_page)
+                if isinstance(widget, (ttk.Label, ttk.Button, gui.RoundedButton))
+            ]
+            self.assertIn("移入回收站", texts)
+            self.assertTrue(any("不在原文件夹创建额外备份" in text for text in texts))
+
 
 if __name__ == "__main__":
     unittest.main()
