@@ -1,6 +1,6 @@
 ; 旭影的摄影工具集 Windows per-user 安装配置
 #define AppName "旭影的摄影工具集"
-#define AppVersion "1.0.16"
+#define AppVersion "1.0.17"
 #define AppPublisher "旭影"
 #define AppExeName "旭影的摄影工具集.exe"
 
@@ -30,7 +30,7 @@ ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 WizardStyle=modern
 UninstallDisplayName={#AppName}
-VersionInfoVersion=1.0.16.0
+VersionInfoVersion=1.0.17.0
 VersionInfoCompany={#AppPublisher}
 VersionInfoDescription={#AppName} Windows 安装程序
 

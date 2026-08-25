@@ -284,8 +284,8 @@ def _sidecar_target_for_rename(
 
     standard_name = f"{image_source.stem}.xmp".casefold()
     if sidecar_source.name.casefold() == standard_name:
-        return image_target.with_suffix(".xmp")
-    return image_target.with_name(f"{image_target.name}.xmp")
+        return image_target.with_suffix(sidecar_source.suffix)
+    return image_target.with_name(f"{image_target.name}{sidecar_source.suffix}")
 
 
 def build_rename_plan(
@@ -360,7 +360,7 @@ def build_rename_plan(
             counter += 1
 
         for source in sorted(members, key=lambda p: p.suffix.casefold()):
-            target_name = f"DSC{date_text}-{counter:0{COUNTER_LEN}d}{source.suffix.lower()}"
+            target_name = f"DSC{date_text}-{counter:0{COUNTER_LEN}d}{source.suffix}"
             target = source.with_name(target_name)
             if source != target:
                 operations.append(RenameOperation(str(source), str(target), "照片"))

@@ -31,6 +31,89 @@ def assert_progress_complete(
 
 
 class RenameTests(unittest.TestCase):
+    def test_sync_works_before_and_after_rename_with_uppercase_extensions(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            raw = root / "B_DSC09252.ARW"
+            jpg = root / "B_DSC09252.JPG"
+            sidecar = root / "B_DSC09252.XMP"
+            raw.write_bytes(b"raw")
+            jpg.write_bytes(MINIMAL_JPEG)
+            sidecar.write_text(
+                "<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#' "
+                "xmlns:xmp='http://ns.adobe.com/xap/1.0/'>"
+                "<rdf:Description xmp:Rating='1' /></rdf:RDF>",
+                encoding="utf-8",
+            )
+
+            support = root / "support"
+            with mock.patch.object(
+                core,
+                "APP_SUPPORT_DIR",
+                support,
+            ), mock.patch.object(
+                core,
+                "RENAME_BACKUP_DIR",
+                support / "rename",
+            ), mock.patch.object(
+                core,
+                "XMP_BACKUP_DIR",
+                support / "xmp",
+            ):
+                first_sync = core.scan_sync(
+                    root,
+                    "RAW → JPG",
+                    True,
+                    False,
+                    recursive=False,
+                )
+                self.assertEqual(len(first_sync.operations), 1)
+                core.execute_sync_plan(first_sync.operations)
+                self.assertEqual(core.read_xmp_properties(jpg)[0], 1)
+
+                rename_plan = core.build_rename_plan(root, recursive=False)
+                core.execute_rename_plan(rename_plan)
+                renamed_raw = Path(
+                    next(
+                        operation.target
+                        for operation in rename_plan.operations
+                        if operation.kind == "照片"
+                        and Path(operation.source).suffix == ".ARW"
+                    )
+                )
+                renamed_jpg = Path(
+                    next(
+                        operation.target
+                        for operation in rename_plan.operations
+                        if operation.kind == "照片"
+                        and Path(operation.source).suffix == ".JPG"
+                    )
+                )
+                self.assertEqual(renamed_raw.suffix, ".ARW")
+                self.assertEqual(renamed_jpg.suffix, ".JPG")
+                renamed_sidecar = renamed_raw.with_suffix(".XMP")
+                self.assertTrue(renamed_sidecar.exists())
+                renamed_sidecar.write_text(
+                    "<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#' "
+                    "xmlns:xmp='http://ns.adobe.com/xap/1.0/'>"
+                    "<rdf:Description xmp:Rating='2' /></rdf:RDF>",
+                    encoding="utf-8",
+                )
+
+                second_sync = core.scan_sync(
+                    root,
+                    "RAW → JPG",
+                    True,
+                    False,
+                    recursive=False,
+                )
+                self.assertEqual(second_sync.matched_count, 1)
+                self.assertEqual(second_sync.marked_count, 1)
+                self.assertEqual(len(second_sync.operations), 1)
+                self.assertEqual(second_sync.operations[0].rating, 2)
+                core.execute_sync_plan(second_sync.operations)
+                self.assertEqual(core.read_xmp_properties(renamed_jpg)[0], 2)
+
     def test_non_recursive_rename_ignores_backup_subfolder(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -98,8 +181,8 @@ class RenameTests(unittest.TestCase):
                 )
                 assert_progress_complete(self, execute_updates)
 
-                self.assertTrue((root / "DSC26-07-25-00001.arw").exists())
-                self.assertTrue((root / "DSC26-07-25-00001.jpg").exists())
+                self.assertTrue((root / "DSC26-07-25-00001.ARW").exists())
+                self.assertTrue((root / "DSC26-07-25-00001.JPG").exists())
                 self.assertTrue((root / "DSC26-07-25-00001.xmp").exists())
 
                 restored = core.undo_latest_rename(
@@ -241,7 +324,7 @@ class RenameTests(unittest.TestCase):
             self.assertFalse(plan.conflicts)
             self.assertEqual(
                 Path(plan.operations[0].target).name,
-                "DSC26-07-25-00002.jpg",
+                "DSC26-07-25-00002.JPG",
             )
 
 
@@ -683,6 +766,38 @@ class XmpTests(unittest.TestCase):
             self.assertEqual(count, 8)
             for jpg_name, rating in expected_ratings.items():
                 self.assertEqual(core.read_xmp_properties(root / jpg_name)[0], rating)
+
+    def test_sync_pairs_all_raw_jpg_extension_case_combinations(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            combinations = (
+                (".ARW", ".JPG"),
+                (".ARW", ".jpg"),
+                (".arw", ".JPG"),
+                (".arw", ".jpg"),
+            )
+            for index, (raw_suffix, jpg_suffix) in enumerate(combinations, start=1):
+                stem = f"CASE{index:03d}"
+                (root / f"{stem}{raw_suffix}").write_bytes(b"raw")
+                (root / f"{stem}{jpg_suffix}").write_bytes(MINIMAL_JPEG)
+                (root / f"{stem}.xmp").write_text(
+                    "<xmp:Rating>2</xmp:Rating>",
+                    encoding="utf-8",
+                )
+
+            result = core.scan_sync(
+                root,
+                "RAW → JPG",
+                True,
+                False,
+                recursive=False,
+            )
+
+            self.assertEqual(result.source_count, 4)
+            self.assertEqual(result.target_count, 4)
+            self.assertEqual(result.matched_count, 4)
+            self.assertEqual(result.marked_count, 4)
+            self.assertEqual(len(result.operations), 4)
 
     def test_raw_to_jpg_updates_existing_xap_packet_without_duplicate(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
