@@ -111,6 +111,123 @@ class RenameTests(unittest.TestCase):
                 self.assertTrue(jpg.exists())
                 self.assertTrue(sidecar.exists())
 
+    def test_rename_preserves_all_sidecar_styles_syncs_and_undoes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            raw = root / "B_DSC09252.ARW"
+            jpg = root / "B_DSC09252.JPG"
+            standard = root / "B_DSC09252.xmp"
+            legacy = root / "B_DSC09252.ARW.xmp"
+            raw.write_bytes(b"raw")
+            jpg.write_bytes(MINIMAL_JPEG)
+            standard.write_text(
+                "<xmp:Rating>1</xmp:Rating>",
+                encoding="utf-8",
+            )
+            legacy_content = (
+                "<xmp:Rating>3</xmp:Rating><xmp:Label>Red</xmp:Label>"
+            )
+            legacy.write_text(legacy_content, encoding="utf-8")
+            timestamp = datetime(2026, 8, 25, 10, 0).timestamp()
+            for path in (raw, jpg, standard):
+                os.utime(path, (timestamp, timestamp))
+            os.utime(legacy, (timestamp + 10, timestamp + 10))
+
+            backup_dir = root / "rename_backups"
+            with mock.patch.object(core, "RENAME_BACKUP_DIR", backup_dir), mock.patch.object(
+                core,
+                "APP_SUPPORT_DIR",
+                root,
+            ), mock.patch.object(
+                core,
+                "XMP_BACKUP_DIR",
+                root / "xmp_backups",
+            ):
+                plan = core.build_rename_plan(root, recursive=False)
+                sidecar_operations = [
+                    operation
+                    for operation in plan.operations
+                    if operation.kind == "XMP 侧车"
+                ]
+                self.assertEqual(len(sidecar_operations), 2)
+
+                core.execute_rename_plan(plan)
+                raw_operation = next(
+                    operation
+                    for operation in plan.operations
+                    if operation.kind == "照片"
+                    and Path(operation.source).suffix.lower() == ".arw"
+                )
+                renamed_raw = Path(raw_operation.target)
+                renamed_standard = renamed_raw.with_suffix(".xmp")
+                renamed_legacy = renamed_raw.with_name(f"{renamed_raw.name}.xmp")
+                self.assertTrue(renamed_standard.exists())
+                self.assertTrue(renamed_legacy.exists())
+                self.assertEqual(renamed_legacy.read_text(encoding="utf-8"), legacy_content)
+
+                sync_result = core.scan_sync(
+                    root,
+                    "RAW → JPG",
+                    True,
+                    True,
+                    recursive=False,
+                )
+                self.assertEqual(len(sync_result.operations), 1)
+                self.assertEqual(sync_result.operations[0].rating, 3)
+                self.assertEqual(sync_result.operations[0].label, "Red")
+                core.execute_sync_plan(sync_result.operations)
+
+                restored = core.undo_latest_rename()
+
+            self.assertEqual(restored, 4)
+            self.assertTrue(raw.exists())
+            self.assertTrue(jpg.exists())
+            self.assertTrue(standard.exists())
+            self.assertTrue(legacy.exists())
+            self.assertEqual(legacy.read_text(encoding="utf-8"), legacy_content)
+
+    def test_undo_restores_sidecar_created_after_rename(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            raw = root / "B_DSC09252.ARW"
+            jpg = root / "B_DSC09252.JPG"
+            standard = root / "B_DSC09252.xmp"
+            raw.write_bytes(b"raw")
+            jpg.write_bytes(MINIMAL_JPEG)
+            standard.write_text("<xmp:Rating>1</xmp:Rating>", encoding="utf-8")
+
+            backup_dir = root / "rename_backups"
+            with mock.patch.object(core, "RENAME_BACKUP_DIR", backup_dir), mock.patch.object(
+                core,
+                "APP_SUPPORT_DIR",
+                root,
+            ), mock.patch.object(core, "XMP_BACKUP_DIR", root / "xmp"):
+                plan = core.build_rename_plan(root, recursive=False)
+                core.execute_rename_plan(plan)
+                raw_operation = next(
+                    operation
+                    for operation in plan.operations
+                    if operation.kind == "照片"
+                    and Path(operation.source).suffix.lower() == ".arw"
+                )
+                renamed_raw = Path(raw_operation.target)
+                new_legacy = renamed_raw.with_name(f"{renamed_raw.name}.xmp")
+                new_content = (
+                    "<xmp:Rating>4</xmp:Rating><xmp:Label>Blue</xmp:Label>"
+                )
+                new_legacy.write_text(new_content, encoding="utf-8")
+
+                restored = core.undo_latest_rename()
+
+            original_legacy = root / "B_DSC09252.ARW.xmp"
+            self.assertEqual(restored, 4)
+            self.assertTrue(raw.exists())
+            self.assertTrue(jpg.exists())
+            self.assertTrue(standard.exists())
+            self.assertTrue(original_legacy.exists())
+            self.assertEqual(original_legacy.read_text(encoding="utf-8"), new_content)
+            self.assertFalse(new_legacy.exists())
+
     def test_existing_formatted_file_is_kept_and_counter_continues(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

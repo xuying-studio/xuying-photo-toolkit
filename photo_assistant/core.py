@@ -275,6 +275,19 @@ def _find_sidecars(image_path: Path) -> list[Path]:
         return []
 
 
+def _sidecar_target_for_rename(
+    image_source: Path,
+    image_target: Path,
+    sidecar_source: Path,
+) -> Path:
+    """保留 stem.xmp 或 filename.ext.xmp 的原命名方式。"""
+
+    standard_name = f"{image_source.stem}.xmp".casefold()
+    if sidecar_source.name.casefold() == standard_name:
+        return image_target.with_suffix(".xmp")
+    return image_target.with_name(f"{image_target.name}.xmp")
+
+
 def build_rename_plan(
     folder: str | Path,
     recursive: bool = True,
@@ -356,10 +369,13 @@ def build_rename_plan(
             if source.suffix.lower() in RAW_EXTENSIONS:
                 sidecars = _find_sidecars(source)
                 if len(sidecars) > 1:
-                    warnings.append(f"发现多个 XMP 侧车，仅处理优先项：{source}")
-                if sidecars:
-                    sidecar_source = sidecars[0]
-                    sidecar_target = target.with_suffix(".xmp")
+                    warnings.append(f"发现多个 XMP 侧车，将全部保留命名方式处理：{source}")
+                for sidecar_source in sidecars:
+                    sidecar_target = _sidecar_target_for_rename(
+                        source,
+                        target,
+                        sidecar_source,
+                    )
                     if sidecar_source != sidecar_target:
                         operations.append(
                             RenameOperation(str(sidecar_source), str(sidecar_target), "XMP 侧车")
@@ -488,6 +504,40 @@ def _latest_json(folder: Path) -> Path | None:
     return files[0] if files else None
 
 
+def _supplement_new_sidecars_for_undo(
+    operations: list[dict[str, object]],
+    reversed_pairs: list[tuple[Path, Path]],
+) -> list[tuple[Path, Path]]:
+    """把重命名后新产生且可安全映射的 RAW 侧车加入撤回。"""
+
+    result = list(reversed_pairs)
+    current_sources = {source for source, _ in result}
+    original_targets = {target for _, target in result}
+    for item in operations:
+        if item.get("kind") != "照片":
+            continue
+        original_raw = Path(str(item["source"]))
+        renamed_raw = Path(str(item["target"]))
+        if original_raw.suffix.lower() not in RAW_EXTENSIONS:
+            continue
+        for sidecar in _find_sidecars(renamed_raw):
+            if sidecar in current_sources:
+                continue
+            original_sidecar = _sidecar_target_for_rename(
+                renamed_raw,
+                original_raw,
+                sidecar,
+            )
+            if original_sidecar in original_targets or original_sidecar.exists():
+                raise FileExistsError(
+                    f"撤回发现重命名后新增侧车，但原位置已有同名文件：{original_sidecar}"
+                )
+            result.append((sidecar, original_sidecar))
+            current_sources.add(sidecar)
+            original_targets.add(original_sidecar)
+    return result
+
+
 def undo_latest_rename(progress: ProgressCallback | None = None) -> int:
     """撤回最近一次重命名，返回恢复的文件数量。"""
 
@@ -500,6 +550,10 @@ def undo_latest_rename(progress: ProgressCallback | None = None) -> int:
         (Path(item["target"]), Path(item["source"]))
         for item in operations
     ]
+    reversed_pairs = _supplement_new_sidecars_for_undo(
+        operations,
+        reversed_pairs,
+    )
     _run_two_phase_rename(reversed_pairs, progress)
     backup_path.unlink()
     return len(reversed_pairs)
