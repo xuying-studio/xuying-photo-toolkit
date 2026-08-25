@@ -858,6 +858,71 @@ class XmpTests(unittest.TestCase):
             self.assertIn(b"<xap:Rating>2</xap:Rating>", updated)
             self.assertEqual(core.read_xmp_properties(jpg)[0], 2)
 
+    def test_three_and_four_star_update_every_standard_xmp_packet(self) -> None:
+        for rating in (3, 4):
+            with self.subTest(rating=rating), tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                raw = root / f"RATING{rating}.ARW"
+                jpg = root / f"RATING{rating}.JPG"
+                raw.write_bytes(b"raw")
+                raw.with_suffix(".xmp").write_text(
+                    "<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#' "
+                    "xmlns:xmp='http://ns.adobe.com/xap/1.0/'>"
+                    f"<rdf:Description xmp:Rating='{rating}' /></rdf:RDF>",
+                    encoding="utf-8",
+                )
+                current_packet = (
+                    b"<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#' "
+                    b"xmlns:xmp='http://ns.adobe.com/xap/1.0/'>"
+                    + f"<rdf:Description xmp:Rating='{rating}' /></rdf:RDF>".encode()
+                )
+                stale_packet = (
+                    b"<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#' "
+                    b"xmlns:xap='http://ns.adobe.com/xap/1.0/'>"
+                    b"<rdf:Description xap:Rating='0' /></rdf:RDF>"
+                )
+                first_jpeg = self.jpeg_with_xmp(current_packet)
+                second_segment = self.jpeg_with_xmp(stale_packet)[2:-2]
+                jpg.write_bytes(first_jpeg[:-2] + second_segment + first_jpeg[-2:])
+
+                result = core.scan_sync(
+                    root,
+                    "RAW → JPG",
+                    True,
+                    False,
+                    recursive=False,
+                )
+                # 第一份包看似已同步，第二份旧包仍必须触发操作。
+                self.assertEqual(core.read_xmp_properties(jpg)[0], rating)
+                self.assertEqual(len(result.operations), 1)
+
+                support = root / "support"
+                with mock.patch.object(
+                    core,
+                    "APP_SUPPORT_DIR",
+                    support,
+                ), mock.patch.object(
+                    core,
+                    "RENAME_BACKUP_DIR",
+                    support / "rename",
+                ), mock.patch.object(
+                    core,
+                    "XMP_BACKUP_DIR",
+                    support / "xmp",
+                ):
+                    count, _ = core.execute_sync_plan(result.operations)
+
+                payloads = core._read_jpeg_xmp_payloads(jpg)
+                self.assertEqual(count, 1)
+                self.assertEqual(len(payloads), 2)
+                self.assertEqual(
+                    [core._read_rating(payload) for payload in payloads],
+                    [rating, rating],
+                )
+                self.assertTrue(
+                    core._jpeg_xmp_packets_match(jpg, rating, None)
+                )
+
     def test_jpg_rating_scan_reads_xmp_segment_without_full_file_reader(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
