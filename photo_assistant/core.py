@@ -86,8 +86,19 @@ RE_RATING_ELEM = re.compile(
     rb'</(?:[A-Za-z_][A-Za-z0-9_.-]*:)?Rating\s*>',
     re.IGNORECASE,
 )
-RE_LABEL_ATTR = re.compile(rb'xmp:Label\s*=\s*"([^"]*)"')
-RE_LABEL_ELEM = re.compile(rb"<xmp:Label>([^<]*)</xmp:Label>")
+RE_LABEL_ATTR = re.compile(
+    rb'(?:[A-Za-z_][A-Za-z0-9_.-]*:)?Label\s*=\s*"([^"]*)"',
+    re.IGNORECASE,
+)
+RE_LABEL_ATTR_SINGLE = re.compile(
+    rb"(?:[A-Za-z_][A-Za-z0-9_.-]*:)?Label\s*=\s*'([^']*)'",
+    re.IGNORECASE,
+)
+RE_LABEL_ELEM = re.compile(
+    rb'<(?:[A-Za-z_][A-Za-z0-9_.-]*:)?Label\b[^>]*>\s*([^<]*?)\s*'
+    rb'</(?:[A-Za-z_][A-Za-z0-9_.-]*:)?Label\s*>',
+    re.IGNORECASE,
+)
 XMP_JPEG_HEADER = b"http://ns.adobe.com/xap/1.0/\x00"
 XMP_NAMESPACE = "http://ns.adobe.com/xap/1.0/"
 
@@ -1202,6 +1213,21 @@ def _read_xml_xmp_value(content: bytes | None, property_name: str) -> str | None
     return None
 
 
+def _xmp_namespace_prefix(content: bytes | None) -> bytes | None:
+    """返回绑定到 Adobe XMP namespace 的实际前缀，例如 xmp 或 xap。"""
+
+    if not content:
+        return None
+    pattern = re.compile(
+        rb"xmlns:([A-Za-z_][A-Za-z0-9_.-]*)\s*=\s*(['\"])"
+        + re.escape(XMP_NAMESPACE.encode("ascii"))
+        + rb"\2",
+        re.IGNORECASE,
+    )
+    match = pattern.search(content)
+    return match.group(1) if match else None
+
+
 def _parse_rating_value(value: str | None) -> int:
     """把 XMP 星标文本规范化为 0～5，无法识别时返回 0。"""
 
@@ -1227,7 +1253,11 @@ def _read_label(content: bytes | None) -> str | None:
     xml_label = _read_xml_xmp_value(content, "Label")
     if xml_label is not None:
         return xml_label or None
-    match = RE_LABEL_ATTR.search(content) or RE_LABEL_ELEM.search(content)
+    match = (
+        RE_LABEL_ATTR.search(content)
+        or RE_LABEL_ATTR_SINGLE.search(content)
+        or RE_LABEL_ELEM.search(content)
+    )
     if not match:
         return None
     value = match.group(1).decode("utf-8", errors="replace")
@@ -1355,7 +1385,7 @@ def _replace_or_insert_property(
     if property_name == "Rating":
         patterns = (RE_RATING_ATTR, RE_RATING_ELEM)
     else:
-        patterns = (RE_LABEL_ATTR, RE_LABEL_ELEM)
+        patterns = (RE_LABEL_ATTR, RE_LABEL_ATTR_SINGLE, RE_LABEL_ELEM)
 
     for pattern in patterns:
         match = pattern.search(content)
@@ -1364,7 +1394,8 @@ def _replace_or_insert_property(
                 return content, False
             return content[:match.start(1)] + escaped + content[match.end(1):], True
 
-    if b"xmlns:xmp" not in content:
+    prefix = _xmp_namespace_prefix(content)
+    if prefix is None:
         return content, False
     start = content.find(b"<rdf:Description")
     if start < 0:
@@ -1372,7 +1403,8 @@ def _replace_or_insert_property(
     tag_end = content.find(b">", start)
     if tag_end < 0:
         return content, False
-    element = b"\n   <xmp:" + property_name.encode() + b">" + escaped + b"</xmp:" + property_name.encode() + b">"
+    element_name = prefix + b":" + property_name.encode()
+    element = b"\n   <" + element_name + b">" + escaped + b"</" + element_name + b">"
     if content[tag_end - 1:tag_end] == b"/":
         opening = content[start:tag_end - 1] + b">"
         replacement = opening + element + b"\n  </rdf:Description>"
@@ -1424,17 +1456,22 @@ def _write_properties(path: Path, rating: int | None, label: str | None) -> None
         if label is not None:
             updated, did_change = _replace_or_insert_property(updated, "Label", label)
             changed = changed or did_change
-        if not changed and b"xmlns:xmp" not in existing:
+        if not changed and _xmp_namespace_prefix(existing) is None:
             updated = _make_xmp_xml(rating, label)
             changed = True
         if changed:
             sidecar.write_bytes(updated)
+        actual_rating, actual_label = read_xmp_properties(path)
+        if rating is not None and actual_rating != rating:
+            raise ValueError("RAW 侧车星标写入后校验失败。")
+        if label is not None and actual_label != label:
+            raise ValueError("RAW 侧车颜色标签写入后校验失败。")
         return
 
     existing = path.read_bytes()
     updated = existing
     changed = False
-    if b"xmlns:xmp" not in existing:
+    if _xmp_namespace_prefix(existing) is None:
         updated = _insert_jpeg_xmp(existing, rating, label)
         changed = True
     else:
@@ -1449,6 +1486,11 @@ def _write_properties(path: Path, rating: int | None, label: str | None) -> None
         temporary.write_bytes(updated)
         shutil.copystat(path, temporary)
         temporary.replace(path)
+    actual_rating, actual_label = read_xmp_properties(path)
+    if rating is not None and actual_rating != rating:
+        raise ValueError("JPG 星标写入后校验失败。")
+    if label is not None and actual_label != label:
+        raise ValueError("JPG 颜色标签写入后校验失败。")
 
 
 def execute_sync_plan(

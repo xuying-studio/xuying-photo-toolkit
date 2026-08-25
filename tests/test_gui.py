@@ -132,6 +132,16 @@ class GuiTests(unittest.TestCase):
             self.assertTrue(sync_page.label_var.get())
             self.assertEqual(app.title(), "旭影的摄影工具集")
 
+    def test_all_pages_state_current_folder_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = self.make_app(Path(temp_dir) / "ui_config.json")
+            labels = [
+                widget.cget("text")
+                for widget in all_descendants(app)
+                if isinstance(widget, tk.Label)
+            ]
+            self.assertEqual(labels.count("仅扫描当前文件夹"), 3)
+
     def test_photo_folder_is_shared_between_all_tools(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             app = self.make_app(Path(temp_dir) / "ui_config.json")

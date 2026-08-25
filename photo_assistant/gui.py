@@ -1104,7 +1104,7 @@ class RenamePage(BasePage):
         ).pack(side=tk.LEFT)
         tk.Label(
             action_row,
-            text="扫描包含所有子文件夹",
+            text="仅扫描当前文件夹",
             background=self.palette["panel"],
             foreground=self.palette["tertiary"],
             font=self.winfo_toplevel().font_caption,
@@ -1202,7 +1202,7 @@ class RenamePage(BasePage):
             "正在读取拍摄时间并生成预览…",
             lambda progress: core.build_rename_plan(
                 folder,
-                recursive=True,
+                recursive=False,
                 progress=progress,
             ),
             self._show_plan,
@@ -1350,12 +1350,12 @@ class CleanupPage(BasePage):
 
         if sys.platform == "win32":
             cleanup_description = (
-                "递归检查同一文件夹内的同名照片；待清理文件直接移入 Windows 回收站，"
+                "检查当前文件夹内的同名照片；待清理文件直接移入 Windows 回收站，"
                 "不在原文件夹创建额外备份。"
             )
         else:
             cleanup_description = (
-                "递归检查同一文件夹内的同名照片；移入废纸篓前创建隐藏安全备份，"
+                "检查当前文件夹内的同名照片；移入废纸篓前创建隐藏安全备份，"
                 "恢复不依赖直接访问废纸篓。"
             )
 
@@ -1445,7 +1445,7 @@ class CleanupPage(BasePage):
         ).pack(side=tk.LEFT)
         tk.Label(
             action_row,
-            text="扫描包含所有子文件夹",
+            text="仅扫描当前文件夹",
             background=self.palette["panel"],
             foreground=self.palette["tertiary"],
             font=self.winfo_toplevel().font_caption,
@@ -1484,7 +1484,7 @@ class CleanupPage(BasePage):
             lambda progress: core.scan_cleanup(
                 folder,
                 kind,
-                recursive=True,
+                recursive=False,
                 progress=progress,
             ),
             self._show_items,
@@ -1740,7 +1740,7 @@ class SyncPage(BasePage):
         ).pack(side=tk.LEFT)
         tk.Label(
             action_row,
-            text="扫描包含所有子文件夹",
+            text="仅扫描当前文件夹",
             background=self.palette["panel"],
             foreground=self.palette["tertiary"],
             font=self.winfo_toplevel().font_caption,
@@ -1786,7 +1786,7 @@ class SyncPage(BasePage):
                 direction,
                 sync_rating,
                 sync_label,
-                recursive=True,
+                recursive=False,
                 progress=progress,
             ),
             self._show_operations,

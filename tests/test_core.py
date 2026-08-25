@@ -31,6 +31,28 @@ def assert_progress_complete(
 
 
 class RenameTests(unittest.TestCase):
+    def test_non_recursive_rename_ignores_backup_subfolder(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            backup = root / "备份"
+            backup.mkdir()
+            for folder in (root, backup):
+                (folder / "B_DSC09252.ARW").write_bytes(b"raw")
+                (folder / "B_DSC09252.JPG").write_bytes(MINIMAL_JPEG)
+
+            plan = core.build_rename_plan(root, recursive=False)
+
+            self.assertEqual(plan.stats.total_images, 2)
+            self.assertEqual(plan.image_count, 2)
+            self.assertTrue(
+                all(Path(operation.source).parent == root for operation in plan.operations)
+            )
+            target_stems = {
+                Path(operation.target).stem for operation in plan.operations
+            }
+            self.assertEqual(len(target_stems), 1)
+            self.assertTrue(next(iter(target_stems)).endswith("-00001"))
+
     def test_rename_raw_jpg_and_sidecar_then_undo(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -107,6 +129,26 @@ class RenameTests(unittest.TestCase):
 
 
 class CleanupTests(unittest.TestCase):
+    def test_non_recursive_cleanup_ignores_backup_subfolder(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            backup = root / "备份"
+            backup.mkdir()
+            current = root / "A001.JPG"
+            nested = backup / "A002.JPG"
+            current.write_bytes(MINIMAL_JPEG)
+            nested.write_bytes(MINIMAL_JPEG)
+
+            result = core.scan_cleanup(
+                root,
+                "JPG",
+                recursive=False,
+            )
+
+            self.assertEqual(result.total_images, 1)
+            self.assertEqual(result.target_count, 1)
+            self.assertEqual([Path(item.path) for item in result.items], [current])
+
     def test_windows_app_data_uses_roaming_profile(self) -> None:
         roaming = str(Path("C:/Users/test/AppData/Roaming"))
         with mock.patch.object(core.sys, "platform", "win32"), mock.patch.dict(
@@ -418,6 +460,13 @@ class CleanupTests(unittest.TestCase):
 
 
 class XmpTests(unittest.TestCase):
+    @staticmethod
+    def jpeg_with_xmp(xml: bytes) -> bytes:
+        payload = core.XMP_JPEG_HEADER + xml
+        segment_length = len(payload) + 2
+        segment = b"\xff\xe1" + segment_length.to_bytes(2, "big") + payload
+        return MINIMAL_JPEG[:2] + segment + MINIMAL_JPEG[2:]
+
     def test_raw_xmp_reads_alternate_prefix_single_quotes_and_utf16(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -512,6 +561,74 @@ class XmpTests(unittest.TestCase):
             self.assertEqual(count, 8)
             for jpg_name, rating in expected_ratings.items():
                 self.assertEqual(core.read_xmp_properties(root / jpg_name)[0], rating)
+
+    def test_raw_to_jpg_updates_existing_xap_packet_without_duplicate(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            raw = root / "A001.ARW"
+            jpg = root / "A001.JPG"
+            raw.write_bytes(b"raw")
+            raw.with_suffix(".xmp").write_text(
+                "<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#' "
+                "xmlns:xmp='http://ns.adobe.com/xap/1.0/'>"
+                "<rdf:Description xmp:Rating='2' /></rdf:RDF>",
+                encoding="utf-8",
+            )
+            existing_xap = (
+                b"<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#' "
+                b"xmlns:xap='http://ns.adobe.com/xap/1.0/'>"
+                b"<rdf:Description><xap:CreatorTool>Adobe Bridge</xap:CreatorTool>"
+                b"</rdf:Description></rdf:RDF>"
+            )
+            jpg.write_bytes(self.jpeg_with_xmp(existing_xap))
+
+            result = core.scan_sync(root, "RAW → JPG", True, False)
+            self.assertEqual(len(result.operations), 1)
+
+            support = root / "support"
+            with mock.patch.object(core, "APP_SUPPORT_DIR", support), mock.patch.object(
+                core,
+                "RENAME_BACKUP_DIR",
+                support / "rename",
+            ), mock.patch.object(
+                core,
+                "XMP_BACKUP_DIR",
+                support / "xmp",
+            ):
+                count, _ = core.execute_sync_plan(result.operations)
+
+            updated = jpg.read_bytes()
+            self.assertEqual(count, 1)
+            self.assertEqual(updated.count(core.XMP_JPEG_HEADER), 1)
+            self.assertIn(b"<xap:CreatorTool>Adobe Bridge</xap:CreatorTool>", updated)
+            self.assertIn(b"<xap:Rating>2</xap:Rating>", updated)
+            self.assertEqual(core.read_xmp_properties(jpg)[0], 2)
+
+    def test_non_recursive_sync_ignores_marked_backup_subfolder(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            backup = root / "备份"
+            backup.mkdir()
+            for folder, stem in ((root, "A001"), (backup, "A002")):
+                (folder / f"{stem}.ARW").write_bytes(b"raw")
+                (folder / f"{stem}.JPG").write_bytes(MINIMAL_JPEG)
+                (folder / f"{stem}.xmp").write_text(
+                    "<xmp:Rating>2</xmp:Rating>",
+                    encoding="utf-8",
+                )
+
+            result = core.scan_sync(
+                root,
+                "RAW → JPG",
+                True,
+                False,
+                recursive=False,
+            )
+
+            self.assertEqual(result.source_count, 1)
+            self.assertEqual(result.matched_count, 1)
+            self.assertEqual(len(result.operations), 1)
+            self.assertEqual(Path(result.operations[0].source).parent, root)
 
     def test_jpeg_without_xmp_gets_valid_embedded_packet(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
