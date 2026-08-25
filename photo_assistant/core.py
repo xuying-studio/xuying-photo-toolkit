@@ -1234,100 +1234,84 @@ def _read_bytes(path: str | Path) -> bytes | None:
         return None
 
 
-def _find_jpeg_xmp_segments(content: bytes) -> list[JpegXmpSegment]:
-    """解析 JPEG metadata markers，返回全部标准 XMP APP1 段。"""
+def _find_jpeg_xmp_segment(content: bytes) -> JpegXmpSegment | None:
+    """解析 JPEG metadata markers，返回标准 XMP APP1 段。"""
 
     if not content.startswith(b"\xff\xd8"):
-        return []
-    segments: list[JpegXmpSegment] = []
+        return None
     position = 2
     content_length = len(content)
     while position < content_length:
         if content[position] != 0xFF:
-            return segments
+            return None
         while position < content_length and content[position] == 0xFF:
             position += 1
         if position >= content_length:
-            return segments
+            return None
         marker = content[position]
         segment_start = position - 1
         position += 1
 
         if marker in {0xD9, 0xDA}:
-            return segments
+            return None
         if marker == 0x01 or 0xD0 <= marker <= 0xD8:
             continue
         if position + 2 > content_length:
-            return segments
+            return None
         segment_length = int.from_bytes(content[position:position + 2], "big")
         if segment_length < 2:
-            return segments
+            return None
         segment_end = position + segment_length
         if segment_end > content_length:
-            return segments
+            return None
         payload = content[position + 2:segment_end]
         if marker == 0xE1 and payload.startswith(XMP_JPEG_HEADER):
-            segments.append(JpegXmpSegment(segment_start, segment_end, payload))
+            return JpegXmpSegment(segment_start, segment_end, payload)
         position = segment_end
-    return segments
+    return None
 
 
-def _find_jpeg_xmp_segment(content: bytes) -> JpegXmpSegment | None:
-    """兼容旧调用：返回第一份标准 XMP APP1。"""
+def _read_jpeg_xmp_payload(path: str | Path) -> bytes | None:
+    """只读取 JPEG metadata 区域中的 XMP，不加载压缩图像数据。"""
 
-    segments = _find_jpeg_xmp_segments(content)
-    return segments[0] if segments else None
-
-
-def _read_jpeg_xmp_payloads(path: str | Path) -> list[bytes]:
-    """只读取 JPEG metadata 区域中的全部标准 XMP。"""
-
-    payloads: list[bytes] = []
     try:
         with Path(path).open("rb") as file_obj:
             if file_obj.read(2) != b"\xff\xd8":
-                return payloads
+                return None
             while True:
                 marker_prefix = file_obj.read(1)
                 if not marker_prefix:
-                    return payloads
+                    return None
                 if marker_prefix != b"\xff":
-                    return payloads
+                    return None
                 marker_byte = file_obj.read(1)
                 while marker_byte == b"\xff":
                     marker_byte = file_obj.read(1)
                 if not marker_byte:
-                    return payloads
+                    return None
                 marker = marker_byte[0]
                 if marker in {0xD9, 0xDA}:
-                    return payloads
+                    return None
                 if marker == 0x01 or 0xD0 <= marker <= 0xD8:
                     continue
 
                 length_bytes = file_obj.read(2)
                 if len(length_bytes) != 2:
-                    return payloads
+                    return None
                 segment_length = int.from_bytes(length_bytes, "big")
                 if segment_length < 2:
-                    return payloads
+                    return None
                 payload_length = segment_length - 2
                 if marker == 0xE1:
                     payload = file_obj.read(payload_length)
                     if len(payload) != payload_length:
-                        return payloads
+                        return None
                     if payload.startswith(XMP_JPEG_HEADER):
-                        payloads.append(payload)
+                        return payload
                 else:
                     file_obj.seek(payload_length, os.SEEK_CUR)
     except (OSError, PermissionError):
-        return payloads
-
-
-def _read_jpeg_xmp_payload(path: str | Path) -> bytes | None:
-    """兼容旧调用：返回第一份标准 XMP APP1 payload。"""
-
-    payloads = _read_jpeg_xmp_payloads(path)
-    return payloads[0] if payloads else None
+        return None
 
 
 def _replace_jpeg_xmp_segment(
@@ -1452,24 +1436,6 @@ def read_xmp_properties(path: str | Path) -> tuple[int, str | None]:
     return _read_rating(content), _read_label(content)
 
 
-def _jpeg_xmp_packets_match(
-    path: str | Path,
-    rating: int | None,
-    label: str | None,
-) -> bool:
-    """确认 JPG 中每一份标准 XMP 都与目标属性一致。"""
-
-    payloads = _read_jpeg_xmp_payloads(path)
-    if not payloads:
-        return False
-    for payload in payloads:
-        if rating is not None and _read_rating(payload) != rating:
-            return False
-        if label is not None and _read_label(payload) != label:
-            return False
-    return True
-
-
 def _pair_for(path: Path, target_exts: set[str]) -> Path | None:
     try:
         candidates = [
@@ -1545,13 +1511,6 @@ def scan_sync(
                 new_label = label if sync_label and label else None
                 rating_changed = new_rating is not None and new_rating != old_rating
                 label_changed = new_label is not None and new_label != old_label
-                if not target_is_raw and not _jpeg_xmp_packets_match(
-                    target,
-                    new_rating,
-                    new_label,
-                ):
-                    rating_changed = rating_changed or new_rating is not None
-                    label_changed = label_changed or new_label is not None
                 if rating_changed or label_changed:
                     result.append(
                         SyncOperation(
@@ -1698,45 +1657,45 @@ def _write_properties(path: Path, rating: int | None, label: str | None) -> None
     existing = path.read_bytes()
     updated = existing
     changed = False
-    xmp_segments = _find_jpeg_xmp_segments(existing)
-    if not xmp_segments:
+    xmp_segment = _find_jpeg_xmp_segment(existing)
+    if xmp_segment is None:
         updated = _insert_jpeg_xmp(existing, rating, label)
         changed = True
     else:
-        for xmp_segment in reversed(xmp_segments):
-            xmp_payload = xmp_segment.payload
-            if _xmp_namespace_prefix(xmp_payload) is None:
-                raise ValueError("JPG 已有 XMP 包，但无法识别 Adobe XMP namespace。")
-            updated_payload = xmp_payload
-            segment_changed = False
-            if rating is not None:
-                updated_payload, did_change = _replace_or_insert_property(
-                    updated_payload,
-                    "Rating",
-                    str(rating),
-                )
-                segment_changed = segment_changed or did_change
-            if label is not None:
-                updated_payload, did_change = _replace_or_insert_property(
-                    updated_payload,
-                    "Label",
-                    label,
-                )
-                segment_changed = segment_changed or did_change
-            if segment_changed:
-                updated = _replace_jpeg_xmp_segment(
-                    updated,
-                    xmp_segment,
-                    updated_payload,
-                )
-                changed = True
+        xmp_payload = xmp_segment.payload
+        if _xmp_namespace_prefix(xmp_payload) is None:
+            raise ValueError("JPG 已有 XMP 包，但无法识别 Adobe XMP namespace。")
+        updated_payload = xmp_payload
+        if rating is not None:
+            updated_payload, did_change = _replace_or_insert_property(
+                updated_payload,
+                "Rating",
+                str(rating),
+            )
+            changed = changed or did_change
+        if label is not None:
+            updated_payload, did_change = _replace_or_insert_property(
+                updated_payload,
+                "Label",
+                label,
+            )
+            changed = changed or did_change
+        if changed:
+            updated = _replace_jpeg_xmp_segment(
+                existing,
+                xmp_segment,
+                updated_payload,
+            )
     if changed:
         temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
         temporary.write_bytes(updated)
         shutil.copystat(path, temporary)
         temporary.replace(path)
-    if not _jpeg_xmp_packets_match(path, rating, label):
-        raise ValueError("JPG XMP 写入后校验失败，存在未同步的元数据包。")
+    actual_rating, actual_label = read_xmp_properties(path)
+    if rating is not None and actual_rating != rating:
+        raise ValueError("JPG 星标写入后校验失败。")
+    if label is not None and actual_label != label:
+        raise ValueError("JPG 颜色标签写入后校验失败。")
 
 
 def execute_sync_plan(
