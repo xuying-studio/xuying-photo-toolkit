@@ -418,6 +418,101 @@ class CleanupTests(unittest.TestCase):
 
 
 class XmpTests(unittest.TestCase):
+    def test_raw_xmp_reads_alternate_prefix_single_quotes_and_utf16(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            raw = root / "A001.ARW"
+            raw.write_bytes(b"raw")
+            xml = """<?xml version='1.0' encoding='UTF-16'?>
+<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'
+         xmlns:xap='http://ns.adobe.com/xap/1.0/'>
+  <rdf:Description xap:Rating='2' />
+</rdf:RDF>"""
+            raw.with_suffix(".xmp").write_bytes(xml.encode("utf-16"))
+
+            self.assertEqual(core.read_xmp_properties(raw), (2, None))
+
+    def test_newest_duplicate_raw_sidecar_is_selected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            raw = root / "A001.ARW"
+            raw.write_bytes(b"raw")
+            standard = root / "A001.xmp"
+            legacy = root / "A001.ARW.xmp"
+            standard.write_text("<xmp:Rating>1</xmp:Rating>", encoding="utf-8")
+            legacy.write_text("<xmp:Rating>2</xmp:Rating>", encoding="utf-8")
+            os.utime(standard, (1_000, 1_000))
+            os.utime(legacy, (2_000, 2_000))
+
+            self.assertEqual(core._preferred_sidecar(raw), legacy)
+            self.assertEqual(core.read_xmp_properties(raw), (2, None))
+
+    def test_raw_to_jpg_sync_keeps_four_one_star_and_four_two_star(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            expected_ratings: dict[str, int] = {}
+            for index in range(8):
+                rating = 1 if index < 4 else 2
+                stem = f"IMG{index + 1:04d}"
+                raw = root / f"{stem}.ARW"
+                jpg = root / f"{stem}.JPG"
+                sidecar = root / f"{stem}.xmp"
+                raw.write_bytes(b"raw")
+                jpg.write_bytes(MINIMAL_JPEG)
+                if index == 7:
+                    xml = f"""<?xml version='1.0' encoding='UTF-16'?>
+<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'
+         xmlns:xap='http://ns.adobe.com/xap/1.0/'>
+  <rdf:Description xap:Rating='{rating}' />
+</rdf:RDF>"""
+                    sidecar.write_bytes(xml.encode("utf-16"))
+                elif index >= 4:
+                    sidecar.write_text(
+                        "<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#' "
+                        "xmlns:xap='http://ns.adobe.com/xap/1.0/'>"
+                        f"<rdf:Description><xap:Rating> {rating} </xap:Rating>"
+                        "</rdf:Description></rdf:RDF>",
+                        encoding="utf-8",
+                    )
+                else:
+                    sidecar.write_text(
+                        "<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#' "
+                        "xmlns:xmp='http://ns.adobe.com/xap/1.0/'>"
+                        f"<rdf:Description xmp:Rating=\"{rating}\" />"
+                        "</rdf:RDF>",
+                        encoding="utf-8",
+                    )
+                expected_ratings[jpg.name] = rating
+
+            result = core.scan_sync(root, "RAW → JPG", True, False)
+
+            self.assertEqual(result.source_count, 8)
+            self.assertEqual(result.target_count, 8)
+            self.assertEqual(result.matched_count, 8)
+            self.assertEqual(result.marked_count, 8)
+            self.assertEqual(result.up_to_date_count, 0)
+            self.assertEqual(len(result.operations), 8)
+            self.assertEqual(
+                sorted(operation.rating for operation in result.operations),
+                [1, 1, 1, 1, 2, 2, 2, 2],
+            )
+
+            support = root / "support"
+            with mock.patch.object(core, "APP_SUPPORT_DIR", support), mock.patch.object(
+                core,
+                "RENAME_BACKUP_DIR",
+                support / "rename",
+            ), mock.patch.object(
+                core,
+                "XMP_BACKUP_DIR",
+                support / "xmp",
+            ):
+                count, _ = core.execute_sync_plan(result.operations)
+
+            self.assertEqual(count, 8)
+            for jpg_name, rating in expected_ratings.items():
+                self.assertEqual(core.read_xmp_properties(root / jpg_name)[0], rating)
+
     def test_jpeg_without_xmp_gets_valid_embedded_packet(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             jpg = Path(temp_dir) / "A001.jpg"

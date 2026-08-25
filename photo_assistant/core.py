@@ -17,6 +17,7 @@ import subprocess
 import sys
 import time
 import uuid
+from xml.etree import ElementTree
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -74,11 +75,21 @@ RENAMED_STEM_RE = re.compile(
     re.IGNORECASE,
 )
 
-RE_RATING_ATTR = re.compile(rb'xmp:Rating\s*=\s*"([0-5])"')
-RE_RATING_ELEM = re.compile(rb"<xmp:Rating>([0-5])</xmp:Rating>")
+RE_RATING_ATTR = re.compile(
+    rb'(?:[A-Za-z_][A-Za-z0-9_.-]*:)?Rating\s*=\s*["\']\s*'
+    rb'([0-5])(?:\.0+)?\s*["\']',
+    re.IGNORECASE,
+)
+RE_RATING_ELEM = re.compile(
+    rb'<(?:[A-Za-z_][A-Za-z0-9_.-]*:)?Rating\b[^>]*>\s*'
+    rb'([0-5])(?:\.0+)?\s*'
+    rb'</(?:[A-Za-z_][A-Za-z0-9_.-]*:)?Rating\s*>',
+    re.IGNORECASE,
+)
 RE_LABEL_ATTR = re.compile(rb'xmp:Label\s*=\s*"([^"]*)"')
 RE_LABEL_ELEM = re.compile(rb"<xmp:Label>([^<]*)</xmp:Label>")
 XMP_JPEG_HEADER = b"http://ns.adobe.com/xap/1.0/\x00"
+XMP_NAMESPACE = "http://ns.adobe.com/xap/1.0/"
 
 ProgressCallback = Callable[[int, int, str], None]
 
@@ -1156,12 +1167,56 @@ def _is_raw(path: str | Path) -> bool:
 def _preferred_sidecar(path: str | Path) -> Path:
     image = Path(path)
     sidecars = _find_sidecars(image)
-    return sidecars[0] if sidecars else image.with_suffix(".xmp")
+    if not sidecars:
+        return image.with_suffix(".xmp")
+
+    standard_name = f"{image.stem}.xmp".casefold()
+
+    def sidecar_priority(sidecar: Path) -> tuple[int, int]:
+        try:
+            modified = sidecar.stat().st_mtime_ns
+        except OSError:
+            modified = -1
+        return modified, int(sidecar.name.casefold() == standard_name)
+
+    return max(sidecars, key=sidecar_priority)
+
+
+def _read_xml_xmp_value(content: bytes | None, property_name: str) -> str | None:
+    """按 Adobe XMP namespace 读取属性或元素，不依赖前缀名称。"""
+
+    if not content:
+        return None
+    try:
+        root = ElementTree.fromstring(content)
+    except (ElementTree.ParseError, ValueError):
+        return None
+
+    qualified_name = f"{{{XMP_NAMESPACE}}}{property_name}"
+    for element in root.iter():
+        attribute_value = element.attrib.get(qualified_name)
+        if attribute_value is not None:
+            return attribute_value
+        if element.tag == qualified_name and element.text is not None:
+            return element.text
+    return None
+
+
+def _parse_rating_value(value: str | None) -> int:
+    """把 XMP 星标文本规范化为 0～5，无法识别时返回 0。"""
+
+    if value is None:
+        return 0
+    match = re.fullmatch(r"\s*([0-5])(?:\.0+)?\s*", value)
+    return int(match.group(1)) if match else 0
 
 
 def _read_rating(content: bytes | None) -> int:
     if not content:
         return 0
+    xml_rating = _read_xml_xmp_value(content, "Rating")
+    if xml_rating is not None:
+        return _parse_rating_value(xml_rating)
     match = RE_RATING_ATTR.search(content) or RE_RATING_ELEM.search(content)
     return int(match.group(1)) if match else 0
 
@@ -1169,6 +1224,9 @@ def _read_rating(content: bytes | None) -> int:
 def _read_label(content: bytes | None) -> str | None:
     if not content:
         return None
+    xml_label = _read_xml_xmp_value(content, "Label")
+    if xml_label is not None:
+        return xml_label or None
     match = RE_LABEL_ATTR.search(content) or RE_LABEL_ELEM.search(content)
     if not match:
         return None
