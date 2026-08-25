@@ -195,6 +195,15 @@ class SyncScanResult:
     up_to_date_count: int
 
 
+@dataclass(frozen=True)
+class JpegXmpSegment:
+    """JPEG 中标准 XMP APP1 段的位置和 payload。"""
+
+    start: int
+    end: int
+    payload: bytes
+
+
 def _ensure_support_dirs() -> None:
     APP_SUPPORT_DIR.mkdir(parents=True, exist_ok=True)
     RENAME_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
@@ -1171,6 +1180,104 @@ def _read_bytes(path: str | Path) -> bytes | None:
         return None
 
 
+def _find_jpeg_xmp_segment(content: bytes) -> JpegXmpSegment | None:
+    """解析 JPEG metadata markers，返回标准 XMP APP1 段。"""
+
+    if not content.startswith(b"\xff\xd8"):
+        return None
+    position = 2
+    content_length = len(content)
+    while position < content_length:
+        if content[position] != 0xFF:
+            return None
+        while position < content_length and content[position] == 0xFF:
+            position += 1
+        if position >= content_length:
+            return None
+        marker = content[position]
+        segment_start = position - 1
+        position += 1
+
+        if marker in {0xD9, 0xDA}:
+            return None
+        if marker == 0x01 or 0xD0 <= marker <= 0xD8:
+            continue
+        if position + 2 > content_length:
+            return None
+        segment_length = int.from_bytes(content[position:position + 2], "big")
+        if segment_length < 2:
+            return None
+        segment_end = position + segment_length
+        if segment_end > content_length:
+            return None
+        payload = content[position + 2:segment_end]
+        if marker == 0xE1 and payload.startswith(XMP_JPEG_HEADER):
+            return JpegXmpSegment(segment_start, segment_end, payload)
+        position = segment_end
+    return None
+
+
+def _read_jpeg_xmp_payload(path: str | Path) -> bytes | None:
+    """只读取 JPEG metadata 区域中的 XMP，不加载压缩图像数据。"""
+
+    try:
+        with Path(path).open("rb") as file_obj:
+            if file_obj.read(2) != b"\xff\xd8":
+                return None
+            while True:
+                marker_prefix = file_obj.read(1)
+                if not marker_prefix:
+                    return None
+                if marker_prefix != b"\xff":
+                    return None
+                marker_byte = file_obj.read(1)
+                while marker_byte == b"\xff":
+                    marker_byte = file_obj.read(1)
+                if not marker_byte:
+                    return None
+                marker = marker_byte[0]
+                if marker in {0xD9, 0xDA}:
+                    return None
+                if marker == 0x01 or 0xD0 <= marker <= 0xD8:
+                    continue
+
+                length_bytes = file_obj.read(2)
+                if len(length_bytes) != 2:
+                    return None
+                segment_length = int.from_bytes(length_bytes, "big")
+                if segment_length < 2:
+                    return None
+                payload_length = segment_length - 2
+                if marker == 0xE1:
+                    payload = file_obj.read(payload_length)
+                    if len(payload) != payload_length:
+                        return None
+                    if payload.startswith(XMP_JPEG_HEADER):
+                        return payload
+                else:
+                    file_obj.seek(payload_length, os.SEEK_CUR)
+    except (OSError, PermissionError):
+        return None
+
+
+def _replace_jpeg_xmp_segment(
+    content: bytes,
+    segment: JpegXmpSegment,
+    payload: bytes,
+) -> bytes:
+    """重建 XMP APP1 并同步更新 JPEG segment length。"""
+
+    segment_length = len(payload) + 2
+    if segment_length > 65535:
+        raise ValueError("XMP 数据过大，无法写入 JPG。")
+    replacement = (
+        b"\xff\xe1"
+        + segment_length.to_bytes(2, "big")
+        + payload
+    )
+    return content[:segment.start] + replacement + content[segment.end:]
+
+
 def _is_raw(path: str | Path) -> bool:
     return Path(path).suffix.lower() in RAW_EXTENSIONS
 
@@ -1267,7 +1374,11 @@ def _read_label(content: bytes | None) -> str | None:
 def read_xmp_properties(path: str | Path) -> tuple[int, str | None]:
     """读取 RAW 侧车或 JPG 内嵌 XMP 的星标与颜色标签。"""
 
-    content = _read_bytes(_preferred_sidecar(path)) if _is_raw(path) else _read_bytes(path)
+    content = (
+        _read_bytes(_preferred_sidecar(path))
+        if _is_raw(path)
+        else _read_jpeg_xmp_payload(path)
+    )
     return _read_rating(content), _read_label(content)
 
 
@@ -1283,6 +1394,24 @@ def _pair_for(path: Path, target_exts: set[str]) -> Path | None:
     except OSError:
         return None
     return sorted(candidates, key=lambda p: p.suffix.casefold())[0] if candidates else None
+
+
+def _build_pair_index(
+    files: list[Path],
+    target_exts: set[str],
+) -> dict[tuple[str, str], Path]:
+    """一次建立同目录同主文件名索引，避免为每张照片重复遍历目录。"""
+
+    candidates: dict[tuple[str, str], list[Path]] = {}
+    for path in files:
+        if path.suffix.lower() not in target_exts:
+            continue
+        key = (str(path.parent).casefold(), path.stem.casefold())
+        candidates.setdefault(key, []).append(path)
+    return {
+        key: sorted(paths, key=lambda path: path.suffix.casefold())[0]
+        for key, paths in candidates.items()
+    }
 
 
 def scan_sync(
@@ -1306,6 +1435,7 @@ def scan_sync(
     result: list[SyncOperation] = []
     files = iter_image_files(folder, recursive)
     sources = [path for path in files if path.suffix.lower() in source_exts]
+    pair_index = _build_pair_index(files, target_exts)
     source_count = len(sources)
     target_count = sum(path.suffix.lower() in target_exts for path in files)
     matched_count = 0
@@ -1314,7 +1444,9 @@ def scan_sync(
     _report_progress(progress, 0, source_count, f"正在读取 XMP 标记 0/{source_count}")
 
     for index, source in enumerate(sources, start=1):
-        target = _pair_for(source, target_exts)
+        target = pair_index.get(
+            (str(source.parent).casefold(), source.stem.casefold())
+        )
         if target is not None:
             matched_count += 1
             rating, label = read_xmp_properties(source)
@@ -1471,16 +1603,35 @@ def _write_properties(path: Path, rating: int | None, label: str | None) -> None
     existing = path.read_bytes()
     updated = existing
     changed = False
-    if _xmp_namespace_prefix(existing) is None:
+    xmp_segment = _find_jpeg_xmp_segment(existing)
+    if xmp_segment is None:
         updated = _insert_jpeg_xmp(existing, rating, label)
         changed = True
     else:
+        xmp_payload = xmp_segment.payload
+        if _xmp_namespace_prefix(xmp_payload) is None:
+            raise ValueError("JPG 已有 XMP 包，但无法识别 Adobe XMP namespace。")
+        updated_payload = xmp_payload
         if rating is not None:
-            updated, did_change = _replace_or_insert_property(updated, "Rating", str(rating))
+            updated_payload, did_change = _replace_or_insert_property(
+                updated_payload,
+                "Rating",
+                str(rating),
+            )
             changed = changed or did_change
         if label is not None:
-            updated, did_change = _replace_or_insert_property(updated, "Label", label)
+            updated_payload, did_change = _replace_or_insert_property(
+                updated_payload,
+                "Label",
+                label,
+            )
             changed = changed or did_change
+        if changed:
+            updated = _replace_jpeg_xmp_segment(
+                existing,
+                xmp_segment,
+                updated_payload,
+            )
     if changed:
         temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
         temporary.write_bytes(updated)
@@ -1527,7 +1678,14 @@ def execute_sync_plan(
                 entry["backup_name"] = backup_name
         else:
             backup_name = f"{index:05d}_{target.name}.bak"
-            shutil.copy2(target, session_dir / backup_name)
+            backup_path = session_dir / backup_name
+            try:
+                # JPG 通过临时文件 replace 写入；同卷硬链接可瞬间保留旧 inode。
+                os.link(target, backup_path)
+                entry["backup_method"] = "hardlink"
+            except OSError:
+                shutil.copy2(target, backup_path)
+                entry["backup_method"] = "copy"
             entry["backup_name"] = backup_name
         manifest_entries.append(entry)
         _report_progress(

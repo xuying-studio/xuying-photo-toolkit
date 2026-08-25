@@ -533,7 +533,12 @@ class XmpTests(unittest.TestCase):
                     )
                 expected_ratings[jpg.name] = rating
 
-            result = core.scan_sync(root, "RAW → JPG", True, False)
+            with mock.patch.object(
+                core,
+                "_pair_for",
+                side_effect=AssertionError("同步扫描不应逐张遍历目录"),
+            ):
+                result = core.scan_sync(root, "RAW → JPG", True, False)
 
             self.assertEqual(result.source_count, 8)
             self.assertEqual(result.target_count, 8)
@@ -580,7 +585,14 @@ class XmpTests(unittest.TestCase):
                 b"<rdf:Description><xap:CreatorTool>Adobe Bridge</xap:CreatorTool>"
                 b"</rdf:Description></rdf:RDF>"
             )
-            jpg.write_bytes(self.jpeg_with_xmp(existing_xap))
+            exif_payload = b"Exif\x00\x00camera-metadata"
+            exif_segment = (
+                b"\xff\xe1"
+                + (len(exif_payload) + 2).to_bytes(2, "big")
+                + exif_payload
+            )
+            jpeg_content = self.jpeg_with_xmp(existing_xap)
+            jpg.write_bytes(jpeg_content[:2] + exif_segment + jpeg_content[2:])
 
             result = core.scan_sync(root, "RAW → JPG", True, False)
             self.assertEqual(len(result.operations), 1)
@@ -598,11 +610,43 @@ class XmpTests(unittest.TestCase):
                 count, _ = core.execute_sync_plan(result.operations)
 
             updated = jpg.read_bytes()
+            segment = core._find_jpeg_xmp_segment(updated)
             self.assertEqual(count, 1)
+            self.assertIsNotNone(segment)
+            assert segment is not None
+            stored_length = int.from_bytes(
+                updated[segment.start + 2:segment.start + 4],
+                "big",
+            )
+            self.assertEqual(stored_length, len(segment.payload) + 2)
+            self.assertEqual(segment.end - segment.start, stored_length + 2)
             self.assertEqual(updated.count(core.XMP_JPEG_HEADER), 1)
+            self.assertIn(exif_payload, updated)
             self.assertIn(b"<xap:CreatorTool>Adobe Bridge</xap:CreatorTool>", updated)
             self.assertIn(b"<xap:Rating>2</xap:Rating>", updated)
             self.assertEqual(core.read_xmp_properties(jpg)[0], 2)
+
+    def test_jpg_rating_scan_reads_xmp_segment_without_full_file_reader(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            jpg = root / "A001.JPG"
+            xmp = (
+                b"<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#' "
+                b"xmlns:xmp='http://ns.adobe.com/xap/1.0/'>"
+                b"<rdf:Description xmp:Rating='2' /></rdf:RDF>"
+            )
+            jpg.write_bytes(
+                self.jpeg_with_xmp(xmp)[:-2]
+                + b"\xff\xda\x00\x08"
+                + b"compressed-pixel-data" * 100_000
+            )
+
+            with mock.patch.object(
+                core,
+                "_read_bytes",
+                side_effect=AssertionError("JPG 不应整文件读取"),
+            ):
+                self.assertEqual(core.read_xmp_properties(jpg), (2, None))
 
     def test_non_recursive_sync_ignores_marked_backup_subfolder(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
