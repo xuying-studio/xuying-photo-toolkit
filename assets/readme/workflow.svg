@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
+  <title id="title">旭影的摄影工具集安全工作流</title>
+  <desc id="desc">选择当前文件夹，扫描并预览，确认后执行，必要时撤回。</desc>
+  <rect width="1200" height="300" rx="28" fill="#F6F8FC"/>
+  <text x="56" y="62" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="36" font-weight="760" fill="#142033">先看清，再执行。</text>
+  <text x="56" y="96" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18" fill="#66758D">CURRENT FOLDER ONLY · PREVIEW · CONFLICT GUARD · UNDO</text>
+  <path d="M174 186H1026" stroke="#CBD5E4" stroke-width="4" stroke-linecap="round"/>
+
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif">
+    <g transform="translate(76 132)">
+      <circle cx="64" cy="54" r="48" fill="#E5F2FF" stroke="#77B9FF" stroke-width="2"/>
+      <text x="64" y="48" text-anchor="middle" font-size="18" font-weight="800" fill="#347FCC">01</text>
+      <text x="64" y="74" text-anchor="middle" font-size="20" font-weight="700" fill="#142033">选择文件夹</text>
+      <text x="64" y="122" text-anchor="middle" font-size="18" fill="#66758D">不进入子目录</text>
+    </g>
+
+    <g transform="translate(352 132)">
+      <circle cx="64" cy="54" r="48" fill="#EEE9FF" stroke="#A28DFF" stroke-width="2"/>
+      <text x="64" y="48" text-anchor="middle" font-size="18" font-weight="800" fill="#735ACB">02</text>
+      <text x="64" y="74" text-anchor="middle" font-size="20" font-weight="700" fill="#142033">扫描与预览</text>
+      <text x="64" y="122" text-anchor="middle" font-size="18" fill="#66758D">数量 · 目标 · 冲突</text>
+    </g>
+
+    <g transform="translate(628 132)">
+      <circle cx="64" cy="54" r="48" fill="#FFF1D9" stroke="#F3C26C" stroke-width="2"/>
+      <text x="64" y="48" text-anchor="middle" font-size="18" font-weight="800" fill="#B67818">03</text>
+      <text x="64" y="74" text-anchor="middle" font-size="20" font-weight="700" fill="#142033">确认后执行</text>
+      <text x="64" y="122" text-anchor="middle" font-size="18" fill="#66758D">原子写入 · 完整备份</text>
+    </g>
+
+    <g transform="translate(904 132)">
+      <circle cx="64" cy="54" r="48" fill="#E8F6EE" stroke="#7DC59A" stroke-width="2"/>
+      <text x="64" y="48" text-anchor="middle" font-size="18" font-weight="800" fill="#3C8E5C">04</text>
+      <text x="64" y="74" text-anchor="middle" font-size="20" font-weight="700" fill="#142033">检查或撤回</text>
+      <text x="64" y="122" text-anchor="middle" font-size="18" fill="#66758D">保留最近一次记录</text>
+    </g>
+  </g>
+</svg>
