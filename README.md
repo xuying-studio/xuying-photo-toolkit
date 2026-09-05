@@ -26,8 +26,8 @@
 
 ### macOS 13+ Apple Silicon · v1.4.0（build 23）
 
-- [下载 DMG（推荐）](https://github.com/xuying-studio/xuying-photo-toolkit/releases/download/v1.4.0/旭影工具箱-macOS-arm64.dmg)
-- [下载 ZIP](https://github.com/xuying-studio/xuying-photo-toolkit/releases/download/v1.4.0/旭影工具箱-macOS-arm64.zip)
+- [下载 DMG（推荐）](https://github.com/xuying-studio/xuying-photo-toolkit/releases/download/v1.4.0/xuying-toolbox-v1.4.0-macos-arm64.dmg)
+- [下载 ZIP](https://github.com/xuying-studio/xuying-photo-toolkit/releases/download/v1.4.0/xuying-toolbox-v1.4.0-macos-arm64.zip)
 - App：`dist/旭影工具箱.app`
 
 当前 v1.4.0 只构建 arm64 macOS 产物，Bundle ID 与旧版独立，可并存安装。当前使用 ad-hoc 签名、尚未经过 Apple Developer ID 公证；首次打开时可能需要右键选择“打开”。

@@ -27,8 +27,8 @@
 
 ## 下载文件
 
-- `旭影工具箱-macOS-arm64.dmg`：推荐安装方式。
-- `旭影工具箱-macOS-arm64.zip`：免磁盘镜像版本。
+- `xuying-toolbox-v1.4.0-macos-arm64.dmg`：推荐安装方式，内部 App 名称为“旭影工具箱”。
+- `xuying-toolbox-v1.4.0-macos-arm64.zip`：免磁盘镜像版本，内部 App 名称为“旭影工具箱”。
 
 ## SHA-256
 
