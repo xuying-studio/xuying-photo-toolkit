@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 project_dir = Path(SPEC).resolve().parent
-app_name = "旭影的摄影工具集"
+app_name = "旭影工具箱"
 icon_path = project_dir / "assets" / "app_icon.ico"
 version_info_path = project_dir / "windows_version_info.txt"
 manifest_path = project_dir / "windows_app.manifest"

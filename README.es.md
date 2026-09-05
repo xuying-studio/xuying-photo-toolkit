@@ -83,7 +83,7 @@ Durante el escaneo, la ejecución y el deshacer se muestran en tiempo real la ca
 ### Usar la aplicación macOS
 
 1. Descarga el `.dmg` desde la página de [Releases](https://github.com/xuying-studio/xuying-photo-toolkit/releases).
-2. Ábrelo y arrastra `旭影的摄影工具集.app` a Aplicaciones.
+2. Ábrelo y arrastra `旭影工具箱.app` a Aplicaciones.
 3. Abre la aplicación, selecciona una carpeta de fotos y pulsa primero **Escanear y previsualizar**.
 
 > La versión actual usa una firma ad-hoc local y no está notarizada con Apple Developer ID. En otro Mac, el primer inicio puede requerir hacer clic derecho en la aplicación y elegir **Abrir**.
@@ -154,7 +154,7 @@ La aplicación sigue la apariencia clara u oscura de macOS. El control **Aparien
 Configuración:
 
 ```text
-~/Library/Application Support/旭影的摄影工具集/ui_config.json
+~/Library/Application Support/旭影工具箱/ui_config.json
 ```
 
 Para mantener la compatibilidad con los registros de deshacer anteriores, las carpetas de respaldo conservan su nombre histórico. Consulta la [sección de datos locales](docs/使用说明.md#8-本地数据与隐私).

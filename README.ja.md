@@ -83,7 +83,7 @@
 ### macOS App を使う
 
 1. [Releases](https://github.com/xuying-studio/xuying-photo-toolkit/releases) から `.dmg` をダウンロードします。
-2. DMG を開き、「旭影的摄影工具集.app」を「アプリケーション」へドラッグします。
+2. DMG を開き、「旭影工具箱.app」を「アプリケーション」へドラッグします。
 3. App を開き、写真フォルダを選択して、まず「スキャンしてプレビュー」を実行します。
 
 > 現在のリリースはローカル ad-hoc 署名で、Apple Developer ID の公証は受けていません。他の Mac で初めて開く場合は、App を右クリックして「開く」を選ぶ必要があります。
@@ -156,7 +156,7 @@ macOS のライト/ダーク外観に追従します。「外観…」から透�
 設定ファイル：
 
 ```text
-~/Library/Application Support/旭影的摄影工具集/ui_config.json
+~/Library/Application Support/旭影工具箱/ui_config.json
 ```
 
 旧バージョンの取り消し記録との互換性のため、業務バックアップフォルダには旧名称が残ります。詳しくは[詳細ガイドのローカルデータ章](docs/使用说明.md#8-本地数据与隐私)をご覧ください。

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-labelledby="title desc">
-  <title id="title">旭影的摄影工具集</title>
-  <desc id="desc">面向 macOS 和 Windows 的本地摄影文件整理工具，支持时间重命名、RAW/JPG 配对清理和 Adobe XMP 标记同步。</desc>
+  <title id="title">旭影工具箱</title>
+  <desc id="desc">面向 macOS 的本地摄影工作流工具，支持文件整理、Adobe XMP 标记同步和关键词快切。</desc>
   <defs>
     <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#4EA1FF"/>
@@ -12,10 +12,10 @@
   <circle cx="1112" cy="-8" r="180" fill="#14203A"/>
 
   <g transform="translate(62 52)" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif">
-    <text x="0" y="0" dominant-baseline="hanging" font-size="18" font-weight="700" letter-spacing="2" fill="#76B8FF">LOCAL PHOTO WORKFLOW · macOS / Windows</text>
-    <text x="0" y="58" dominant-baseline="hanging" font-size="54" font-weight="760" fill="#F6F8FC">旭影的摄影工具集</text>
-    <text x="0" y="132" dominant-baseline="hanging" font-size="25" font-weight="500" fill="#C6D1E3">把重命名、配对清理与 XMP 标记同步</text>
-    <text x="0" y="170" dominant-baseline="hanging" font-size="25" font-weight="500" fill="#C6D1E3">收进一个本地、可预览、可撤回的界面。</text>
+    <text x="0" y="0" dominant-baseline="hanging" font-size="18" font-weight="700" letter-spacing="2" fill="#76B8FF">LOCAL PHOTO WORKFLOW · macOS</text>
+    <text x="0" y="58" dominant-baseline="hanging" font-size="54" font-weight="760" fill="#F6F8FC">旭影工具箱</text>
+    <text x="0" y="132" dominant-baseline="hanging" font-size="25" font-weight="500" fill="#C6D1E3">把文件整理、XMP 标记与关键词快切</text>
+    <text x="0" y="170" dominant-baseline="hanging" font-size="25" font-weight="500" fill="#C6D1E3">收进同一个本地、可预览、可撤回的界面。</text>
 
     <g transform="translate(0 248)" font-size="18" font-weight="650">
       <rect width="142" height="42" rx="21" fill="#152743" stroke="#315982"/>

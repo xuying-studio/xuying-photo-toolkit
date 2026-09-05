@@ -4,7 +4,7 @@
 
 ```text
 Use case: logo-brand
-Asset type: 1024×1024 macOS application icon for a Chinese photo workflow utility named “旭影的摄影工具集”
+Asset type: 1024×1024 macOS application icon for a Chinese photo workflow utility named “旭影工具箱”
 Primary request: Create one polished, professional macOS app icon that visually combines photo file organization, RAW/JPG pairing, chronological renaming, and star/color-label synchronization.
 Subject: A premium dark graphite camera aperture at the center, layered with two subtly offset photo-file cards; one small five-point star and three tiny colored metadata dots (red, yellow, blue) integrated as functional accents; a gentle circular sync-arrow motif around the aperture.
 Style/medium: clean modern 3D icon, Apple-like macOS utility icon aesthetics, restrained depth, crisp geometry, highly legible at small sizes, no photorealistic camera, no people.

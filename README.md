@@ -1,54 +1,47 @@
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="旭影的摄影工具集：本地完成时间重命名、RAW/JPG 配对清理与 XMP 标记同步">
+  <img src="./assets/readme/hero.svg" width="100%" alt="旭影工具箱：本地完成摄影文件整理、XMP 同步与关键词快切">
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/xuying-studio/xuying-photo-toolkit?style=flat-square" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/Windows-10%2F11%20x64-0078D4?style=flat-square&amp;logo=windows11&amp;logoColor=white" alt="Windows 10/11 x64">
-  <img src="https://img.shields.io/badge/macOS-11%2B-111111?style=flat-square&amp;logo=apple" alt="macOS 11+">
+  <img src="https://img.shields.io/badge/macOS-13%2B-111111?style=flat-square&amp;logo=apple" alt="macOS 13+">
+  <img src="https://img.shields.io/badge/Apple%20Silicon-arm64-111111?style=flat-square&amp;logo=apple" alt="Apple Silicon arm64">
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/processing-local%20only-745BEB?style=flat-square" alt="Local-only processing">
 </p>
 
 <p align="center">
   <a href="#下载">下载</a> ·
-  <a href="#三个功能">三个功能</a> ·
+  <a href="#四个工具">四个工具</a> ·
   <a href="#安全工作流">安全工作流</a> ·
   <a href="docs/使用说明.md">完整使用说明</a> ·
   <a href="#从源码运行">源码运行</a>
 </p>
 
-旭影的摄影工具集是一款面向摄影师的本地图形工具。它只处理你选中的**当前文件夹**，把拍摄时间重命名、RAW/JPG 配对清理，以及 Adobe XMP 星标与颜色标签同步放进同一个可预览、可撤回的流程。
+旭影工具箱是一款面向摄影师和短视频创作者的本地图形工具。它把拍摄时间重命名、RAW/JPG 配对清理、Adobe XMP 星标与颜色标签同步，以及截图关键词对齐与快切导出放进同一个工具入口。
 
 > 所有照片、路径和元数据都在本机处理。它是批量整理工具，不是独立备份方案；第一次使用请先拿少量副本验证。
 
 ## 下载
 
-### Windows 10/11 x64 · v1.0.17 测试版
+### macOS 13+ Apple Silicon · v1.4.0（build 23）
 
-- [下载安装版（推荐）](https://github.com/xuying-studio/xuying-photo-toolkit/releases/download/v1.0.17/xuying-photo-toolkit-v1.0.17-windows-x64-setup.exe)
-- [下载免安装便携版](https://github.com/xuying-studio/xuying-photo-toolkit/releases/download/v1.0.17/xuying-photo-toolkit-v1.0.17-windows-x64-portable.zip)
-- [查看发布说明与 SHA-256](https://github.com/xuying-studio/xuying-photo-toolkit/releases/tag/v1.0.17)
+- [下载 DMG（推荐）](https://github.com/xuying-studio/xuying-photo-toolkit/releases/download/v1.4.0/旭影工具箱-macOS-arm64.dmg)
+- [下载 ZIP](https://github.com/xuying-studio/xuying-photo-toolkit/releases/download/v1.4.0/旭影工具箱-macOS-arm64.zip)
+- App：`dist/旭影工具箱.app`
 
-Windows 包已经包含 Python 和运行依赖，按当前用户安装，不要求管理员权限。此测试版尚未进行代码签名，首次打开可能出现 SmartScreen；请确认文件来自本仓库后选择“更多信息 → 仍要运行”。
+当前 v1.4.0 只构建 arm64 macOS 产物，Bundle ID 与旧版独立，可并存安装。当前使用 ad-hoc 签名、尚未经过 Apple Developer ID 公证；首次打开时可能需要右键选择“打开”。
 
-### macOS 11+ · v1.0.10
-
-- [下载 Universal2 DMG（推荐）](https://github.com/xuying-studio/xuying-photo-toolkit/releases/download/v1.0.10/xuying-photo-toolkit-v1.0.10-macos-universal.dmg)
-- [下载 Universal2 ZIP](https://github.com/xuying-studio/xuying-photo-toolkit/releases/download/v1.0.10/xuying-photo-toolkit-v1.0.10-macos-universal.zip)
-- [查看 v1.0.10 发布说明](https://github.com/xuying-studio/xuying-photo-toolkit/releases/tag/v1.0.10)
-
-macOS 包同时支持 Apple Silicon 与 Intel Mac，当前使用 ad-hoc 签名、尚未经过 Apple Developer ID 公证；其他 Mac 首次打开时可能需要右键选择“打开”。
-
-## 三个功能
+## 四个工具
 
 | 功能 | 解决什么问题 | 文件保护 |
 | --- | --- | --- |
 | **时间重命名** | 按 EXIF 拍摄时间统一 RAW、JPG 和 XMP 文件名，保留扩展名大小写 | 冲突即停止、两阶段改名、保存撤回清单 |
 | **RAW/JPG 配对清理** | 找出同目录下缺少配对 RAW 或 JPG 的孤立文件 | 先预览；Windows 移入回收站，macOS 移入废纸篓 |
 | **星标与颜色同步** | 在同名 RAW/JPG 间双向同步常见 Adobe XMP Rating / Label | 不直接写 RAW；JPG 写入前备份，批次失败自动回滚 |
+| **关键词快切** | 使用 Apple Vision OCR 对齐截图关键词，导出 PNG、逐帧 PNG 或无声 MP4 | 原图不覆盖；原生组件离线运行，仅支持 macOS 13+ Apple Silicon |
 
-三个页面共享同一个照片文件夹，但都只扫描当前层级，不进入备份或其他子目录。扩展名匹配不区分大小写，`.ARW/.arw` 与 `.JPG/.jpg` 可以组合使用。
+前三个照片工具共享同一个照片文件夹，但都只扫描当前层级，不进入备份或其他子目录。扩展名匹配不区分大小写，`.ARW/.arw` 与 `.JPG/.jpg` 可以组合使用。关键词快切直接内嵌在工具集右侧工作区，不会再打开额外窗口。
 
 ## 安全工作流
 
@@ -114,8 +107,8 @@ JPG / JPEG，以及：
 
 ## 兼容性与边界
 
-- Windows v1.0.17 是未签名的 x64 测试版，不是 ARM Windows 原生包。
-- macOS v1.0.10 尚未公证。
+- macOS v1.4.0 尚未公证。
+- 关键词快切仅支持 macOS 13+ Apple Silicon，并可与旧版同时安装。
 - 应用只扫描当前文件夹，不递归处理子目录。
 - 配对依据是同目录、同主文件名；不会跨目录猜测配对。
 - Bridge 对缓存、多份 XMP 或 Extended XMP 的显示可能与系统文件属性不同。
@@ -132,32 +125,21 @@ python3 -m pip install -r requirements.txt
 python3 main.py
 ```
 
-要求 Python 3.10+ 和可用的 Tkinter。Windows 构建需要 64 位 Python 与 Inno Setup；macOS 构建需要系统签名与磁盘镜像工具。
+要求 Python 3.10+、可用的 Tkinter 和 Swift 5.9。内嵌版构建需要 Apple Silicon Mac、macOS 13 SDK、系统签名与磁盘镜像工具。
 
 <details>
-<summary><strong>构建 Windows 与 macOS 安装包</strong></summary>
-
-Windows：
-
-```powershell
-py -3.10 -m pip install -r requirements.txt
-.\build_windows.ps1
-```
-
-macOS：
+<summary><strong>构建 macOS 安装包</strong></summary>
 
 ```bash
 chmod +x build_app.sh
 ./build_app.sh
 ```
 
-Windows 也可以通过仓库的 `Windows build` GitHub Actions 工作流构建。
-
 </details>
 
 ## 本地数据与隐私
 
-应用没有照片上传、云同步或遥测功能。透明度设置、重命名撤回清单、XMP 备份和最近一次清理记录保存在当前用户的应用数据目录；详细路径见 [本地数据与隐私](docs/使用说明.md#8-本地数据与隐私)。
+应用没有照片上传、云同步或遥测功能。工具集提供七套皮肤，星雾深蓝、流光玻璃和极光空间在 macOS 优先使用原生背景磨砂；新版已取消透明度调节，窗口始终完全不透明。皮肤设置、重命名撤回清单、XMP 备份和最近一次清理记录保存在当前用户的应用数据目录。详细路径见 [本地数据与隐私](docs/使用说明.md#8-本地数据与隐私)。
 
 ## 贡献与反馈
 

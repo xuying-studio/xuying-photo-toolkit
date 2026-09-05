@@ -85,7 +85,7 @@ Scanning, execution, and undo operations all show the current count, total count
 ### Use the macOS App
 
 1. Download the `.dmg` from the [Releases page](https://github.com/xuying-studio/xuying-photo-toolkit/releases).
-2. Open it and drag `旭影的摄影工具集.app` into Applications.
+2. Open it and drag `旭影工具箱.app` into Applications.
 3. Open the app, choose a photo folder, and click **Scan and Preview** first.
 
 > The current release uses a local ad-hoc signature and is not notarized with an Apple Developer ID. On another Mac, the first launch may require right-clicking the app and choosing **Open**.
@@ -158,7 +158,7 @@ The app follows the macOS light/dark appearance. The **Appearance…** control s
 The new configuration path is:
 
 ```text
-~/Library/Application Support/旭影的摄影工具集/ui_config.json
+~/Library/Application Support/旭影工具箱/ui_config.json
 ```
 
 For compatibility with previous undo records, business backup folders keep their historical Chinese name. See the [local data section of the full guide](docs/使用说明.md#8-本地数据与隐私).
@@ -176,9 +176,9 @@ chmod +x build_app.sh
 
 The script runs the full test suite and then creates universal macOS artifacts for Apple Silicon and Intel:
 
-- `dist/旭影的摄影工具集.app`
-- `dist/旭影的摄影工具集-macOS-universal.zip`
-- `dist/旭影的摄影工具集-macOS-universal.dmg`
+- `dist/旭影工具箱.app`
+- `dist/旭影工具箱-macOS-arm64.zip`
+- `dist/旭影工具箱-macOS-arm64.dmg`
 
 The default build uses ad-hoc signing. For distribution without the first-launch warning, provide an Apple Developer ID Application certificate and a `notarytool` profile:
 

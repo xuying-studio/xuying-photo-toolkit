@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = "Stop"
 $ProjectDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ProjectDir
-$AppName = "旭影的摄影工具集"
+$AppName = "旭影工具箱"
 $DistDir = Join-Path $ProjectDir "dist-windows"
 $BuildDir = Join-Path $ProjectDir "build-windows"
 $PortableDir = Join-Path $DistDir $AppName

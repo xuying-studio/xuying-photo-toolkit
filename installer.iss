@@ -1,11 +1,11 @@
-; 旭影的摄影工具集 Windows per-user 安装配置
-#define AppName "旭影的摄影工具集"
-#define AppVersion "1.0.17"
+; 旭影工具箱 Windows per-user 安装配置
+#define AppName "旭影工具箱"
+#define AppVersion "1.4.0"
 #define AppPublisher "旭影"
-#define AppExeName "旭影的摄影工具集.exe"
+#define AppExeName "旭影工具箱.exe"
 
 #ifndef SourceDir
-  #define SourceDir "dist-windows\旭影的摄影工具集"
+  #define SourceDir "dist-windows\旭影工具箱"
 #endif
 #ifndef OutputDir
   #define OutputDir "dist-windows"
@@ -30,7 +30,7 @@ ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 WizardStyle=modern
 UninstallDisplayName={#AppName}
-VersionInfoVersion=1.0.17.0
+VersionInfoVersion=1.4.0.0
 VersionInfoCompany={#AppPublisher}
 VersionInfoDescription={#AppName} Windows 安装程序
 

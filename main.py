@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""旭影的摄影工具集启动入口。"""
+"""旭影工具箱启动入口。"""
 
 import json
 import sys

@@ -5,10 +5,18 @@ set -euo pipefail
 project_dir="${0:A:h}"
 cd "$project_dir"
 
-app_name="旭影的摄影工具集"
+app_name="旭影工具箱"
 app_path="$project_dir/dist/$app_name.app"
-zip_path="$project_dir/dist/$app_name-macOS-universal.zip"
-dmg_path="$project_dir/dist/$app_name-macOS-universal.dmg"
+zip_path="$project_dir/dist/$app_name-macOS-arm64.zip"
+dmg_path="$project_dir/dist/$app_name-macOS-arm64.dmg"
+keyword_source="$project_dir/native/keyword_aligner"
+keyword_build="$project_dir/build/keyword_aligner"
+keyword_library_name="libKeywordAlignerBridge.dylib"
+keyword_library="$keyword_build/arm64-apple-macosx/release/$keyword_library_name"
+keyword_framework="$app_path/Contents/Frameworks/$keyword_library_name"
+keyword_sdk="${KEYWORD_ALIGNER_SDK:-/Library/Developer/CommandLineTools/SDKs/MacOSX13.3.sdk}"
+vibrancy_source="$project_dir/native/macos_vibrancy.m"
+vibrancy_library="$project_dir/build/native/libxuying_vibrancy.dylib"
 sign_identity="${APPLE_SIGN_IDENTITY:--}"
 notary_profile="${APPLE_NOTARY_PROFILE:-}"
 
@@ -34,31 +42,85 @@ archive_previous_release() {
   if [[ ! -d "$history_dir/$versioned_name.app" ]]; then
     ditto "$app_path" "$history_dir/$versioned_name.app"
   fi
-  if [[ -f "$zip_path" && ! -f "$history_dir/$versioned_name-macOS-universal.zip" ]]; then
-    ditto "$zip_path" "$history_dir/$versioned_name-macOS-universal.zip"
+  if [[ -f "$zip_path" && ! -f "$history_dir/$versioned_name-macOS-arm64.zip" ]]; then
+    ditto "$zip_path" "$history_dir/$versioned_name-macOS-arm64.zip"
   fi
-  if [[ -f "$dmg_path" && ! -f "$history_dir/$versioned_name-macOS-universal.dmg" ]]; then
-    ditto "$dmg_path" "$history_dir/$versioned_name-macOS-universal.dmg"
+  if [[ -f "$dmg_path" && ! -f "$history_dir/$versioned_name-macOS-arm64.dmg" ]]; then
+    ditto "$dmg_path" "$history_dir/$versioned_name-macOS-arm64.dmg"
   fi
 
   echo "已保留历史版本：$history_dir"
 }
 
+build_keyword_quickcut() {
+  if [[ ! -f "$keyword_source/Package.swift" ]]; then
+    echo "未找到关键词快切内嵌源码：$keyword_source" >&2
+    exit 1
+  fi
+  if [[ ! -d "$keyword_sdk" ]]; then
+    keyword_sdk="$(xcrun --sdk macosx --show-sdk-path)"
+  fi
+  mkdir -p "$keyword_build/module-cache" "$keyword_build/clang-cache"
+  CLANG_MODULE_CACHE_PATH="$keyword_build/clang-cache" \
+  SWIFTPM_MODULECACHE_OVERRIDE="$keyword_build/module-cache" \
+    swift build \
+      --package-path "$keyword_source" \
+      --scratch-path "$keyword_build" \
+      --configuration release \
+      --product KeywordAlignerBridge \
+      --arch arm64 \
+      --sdk "$keyword_sdk" \
+      --disable-sandbox \
+      --disable-build-manifest-caching
+  if [[ ! -f "$keyword_library" ]]; then
+    echo "关键词快切桥接构建失败：$keyword_library" >&2
+    exit 1
+  fi
+}
+
+install_keyword_quickcut() {
+  mkdir -p "${keyword_framework:h}"
+  cp "$keyword_library" "$keyword_framework"
+  install_name_tool -id "@rpath/$keyword_library_name" "$keyword_framework"
+}
+
+sign_bundle() {
+  local bundle_path="$1"
+  if [[ "$sign_identity" == "-" ]]; then
+    codesign --force --deep --sign - "$bundle_path"
+  else
+    codesign \
+      --force \
+      --deep \
+      --options runtime \
+      --timestamp \
+      --sign "$sign_identity" \
+      "$bundle_path"
+  fi
+}
+
+build_native_vibrancy() {
+  mkdir -p "${vibrancy_library:h}"
+  clang \
+    -dynamiclib \
+    -fobjc-arc \
+    -framework Cocoa \
+    -arch arm64 \
+    -mmacosx-version-min=13.0 \
+    "$vibrancy_source" \
+    -o "$vibrancy_library"
+  [[ "$(lipo -archs "$vibrancy_library")" == "arm64" ]]
+}
+
+build_keyword_quickcut
+build_native_vibrancy
 python3 -m unittest discover -s tests -v
 archive_previous_release
 python3 -m PyInstaller --clean --noconfirm photo_assistant.spec
-
-if [[ "$sign_identity" == "-" ]]; then
-  codesign --force --deep --sign - "$app_path"
-else
-  codesign \
-    --force \
-    --deep \
-    --options runtime \
-    --timestamp \
-    --sign "$sign_identity" \
-    "$app_path"
-fi
+install_keyword_quickcut
+sign_bundle "$keyword_framework"
+codesign --verify --strict --verbose=2 "$keyword_framework"
+sign_bundle "$app_path"
 
 codesign --verify --deep --strict --verbose=2 "$app_path"
 

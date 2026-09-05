@@ -38,7 +38,7 @@ else:
     _win32_shellcon = None
 
 
-APP_NAME = "旭影的摄影工具集"
+APP_NAME = "旭影工具箱"
 # 保留旧数据目录，确保改名后仍可撤回之前的重命名、清理和 XMP 同步。
 
 

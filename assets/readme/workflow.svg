@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
-  <title id="title">旭影的摄影工具集安全工作流</title>
+  <title id="title">旭影工具箱安全工作流</title>
   <desc id="desc">选择当前文件夹，扫描并预览，确认后执行，必要时撤回。</desc>
   <rect width="1200" height="300" rx="28" fill="#F6F8FC"/>
   <text x="56" y="62" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif" font-size="36" font-weight="760" fill="#142033">先看清，再执行。</text>

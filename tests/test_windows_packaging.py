@@ -30,9 +30,9 @@ class WindowsPackagingTests(unittest.TestCase):
     def test_portable_zip_preserves_chinese_filenames_as_utf8(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            source = root / "旭影的摄影工具集"
+            source = root / "旭影工具箱"
             source.mkdir()
-            (source / "旭影的摄影工具集.exe").write_bytes(b"test")
+            (source / "旭影工具箱.exe").write_bytes(b"test")
             output = root / "portable.zip"
 
             create_portable_zip(source, output)
@@ -41,7 +41,7 @@ class WindowsPackagingTests(unittest.TestCase):
                 item = archive.infolist()[0]
                 self.assertEqual(
                     item.filename,
-                    "旭影的摄影工具集/旭影的摄影工具集.exe",
+                    "旭影工具箱/旭影工具箱.exe",
                 )
                 self.assertTrue(item.flag_bits & 0x800)
 
