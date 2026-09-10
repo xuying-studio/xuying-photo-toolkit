@@ -1,0 +1,59 @@
+{
+  "stage": "3",
+  "scope": "macos-design-system-and-shell",
+  "status": "passed",
+  "cross_platform_complete": false,
+  "platform": "macOS-26.5.2-arm64",
+  "themes": 7,
+  "motion_policies": 3,
+  "placeholder_pages": 4,
+  "matrix_states_passed": 84,
+  "minimum_text_panel_contrast": 8.89,
+  "tests": {
+    "pytest_passed": 78,
+    "pytest_failed": 0,
+    "qml_lint_warnings": 0,
+    "ruff_passed": true,
+    "scale_factors_tested": [1, 2],
+    "keyboard_focus_passed": true,
+    "keyboard_shortcuts_passed": true
+  },
+  "visual_review": {
+    "screenshots": 8,
+    "all_themes_reviewed": true,
+    "neutral_canvas_fixed": true
+  },
+  "package": {
+    "tool": "PyInstaller",
+    "tool_version": "6.22.2",
+    "architecture": "arm64",
+    "bundle_size_kib": 432208,
+    "bundle_size_mib": 422.08,
+    "offscreen_launch_exit": 0,
+    "visible_launch_exit": 0,
+    "codesign_deep_strict_exit": 0,
+    "developer_id_signed": false,
+    "notarized": false
+  },
+  "zip": {
+    "file": "旭影工具箱-2.0.0-alpha.1-stage3-mac-arm64.zip",
+    "bytes": 149731342,
+    "sha256": "009882e125894cffbfbb80129757272dc72ebbc52fc11bc21177c3e0ca927dd5",
+    "integrity_passed": true,
+    "extracted_app_launch_exit": 0,
+    "extracted_codesign_exit": 0
+  },
+  "user_test_assets": {
+    "tracked": false,
+    "modified": false,
+    "used_for_image_processing": false
+  },
+  "deferred": [
+    "Stage 4 ViewModels and business UI integration",
+    "Stage 5 QuickCut and OCR integration",
+    "Stage 6 native visual effects and system reduced-motion binding",
+    "Windows runtime visual matrix",
+    "Developer ID signing and notarization",
+    "QML dependency size optimization"
+  ]
+}

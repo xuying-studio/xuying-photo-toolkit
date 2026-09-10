@@ -1,0 +1,40 @@
+{
+  "stage": "2",
+  "scope": "macos-shared-core",
+  "status": "passed",
+  "cross_platform_complete": false,
+  "reference_commit": "4a287ff57f43b2632861d86607ea0c088793743f",
+  "tests": {
+    "reference_full_passed": 68,
+    "reference_full_failed": 2,
+    "reference_skipped": 2,
+    "reference_core_passed": 30,
+    "stage2_targeted_passed": 65,
+    "new_project_full_passed": 75
+  },
+  "differential_plans": {
+    "rename": true,
+    "cleanup": true,
+    "xmp": true
+  },
+  "safety": {
+    "real_user_photos_used": false,
+    "real_trash_used": false,
+    "raw_original_write_path": false,
+    "preview_before_cleanup_enforced": true,
+    "manifest_before_mutation": true,
+    "symlink_rejected": true,
+    "unknown_xmp_rejected_without_overwrite": true,
+    "failed_rename_journal_retained": true,
+    "trash_inode_locator_tested_with_fake_trash": true,
+    "domain_import_boundary_passed": true,
+    "application_import_boundary_passed": true
+  },
+  "deferred": [
+    "Windows recycle bin adapter",
+    "Windows runtime contract tests",
+    "real removable and network volume tests",
+    "Extended XMP compatibility",
+    "ViewModel and QML integration"
+  ]
+}

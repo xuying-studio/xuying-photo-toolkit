@@ -1,0 +1,53 @@
+"""领域模型。"""
+
+from xuying_toolbox.domain.models.photo import (
+    IMAGE_EXTENSIONS,
+    JPG_EXTENSIONS,
+    RAW_EXTENSIONS,
+    CleanupItem,
+    CleanupScanResult,
+    JpegXmpSegment,
+    RenameOperation,
+    RenamePlan,
+    RenameScanStats,
+    SyncOperation,
+    SyncScanResult,
+    TrashRecord,
+)
+from xuying_toolbox.domain.models.quickcut import (
+    DEFAULT_TARGET_RECT,
+    AlignmentGeometry,
+    AspectRatioPreset,
+    ExportMode,
+    NormalizedRect,
+    OCRCandidate,
+    ProjectSettings,
+    QuickCutQueueItem,
+    RecognitionState,
+    ResolutionPreset,
+)
+
+__all__ = [
+    "DEFAULT_TARGET_RECT",
+    "IMAGE_EXTENSIONS",
+    "JPG_EXTENSIONS",
+    "RAW_EXTENSIONS",
+    "AlignmentGeometry",
+    "AspectRatioPreset",
+    "CleanupItem",
+    "CleanupScanResult",
+    "ExportMode",
+    "JpegXmpSegment",
+    "NormalizedRect",
+    "OCRCandidate",
+    "ProjectSettings",
+    "QuickCutQueueItem",
+    "RecognitionState",
+    "RenameOperation",
+    "RenamePlan",
+    "RenameScanStats",
+    "ResolutionPreset",
+    "SyncOperation",
+    "SyncScanResult",
+    "TrashRecord",
+]

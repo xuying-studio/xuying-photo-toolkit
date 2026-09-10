@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "xuying-toolbox"
+version = "2.0.0rc1"
+description = "旭影工具箱的 PySide6 / Qt Quick 跨平台重构版"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "ExifRead>=3.0,<4",
+  "PySide6==6.11.2",
+  "Send2Trash>=1.8,<2",
+]
+
+[project.scripts]
+xuying-toolbox = "xuying_toolbox.__main__:main"
+
+[dependency-groups]
+dev = [
+  "pyinstaller==6.22.2",
+  "pytest>=9.0,<10",
+  "pytest-qt>=4.5,<5",
+  "ruff>=0.14,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/xuying_toolbox"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+qt_api = "pyside6"
+markers = [
+  "qml: 需要 Qt Quick/QML 引擎的测试",
+  "packaging: 打包产物验证",
+  "windows: 仅在 Windows 实机运行",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "BLE", "UP", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]

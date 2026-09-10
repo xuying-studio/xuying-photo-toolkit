@@ -1,0 +1,57 @@
+{
+  "engine": "RapidOCR",
+  "version": "3.9.2",
+  "scope": "synthetic-fixtures",
+  "not_windows": true,
+  "not_real_screenshots": true,
+  "platform": "macOS-26.5.2-arm64-arm-64bit",
+  "python": "3.12.1",
+  "import_ms": 567.4,
+  "init_ms": 1053.34,
+  "average_image_ms": 384.72,
+  "average_similarity": 1.0,
+  "cases": [
+    {
+      "file": "01_chinese.png",
+      "expected": "婚礼跟拍",
+      "recognized": ["婚礼跟拍"],
+      "similarity": 1.0,
+      "elapsed_ms": 440.6
+    },
+    {
+      "file": "02_chinese_spaces.png",
+      "expected": "新娘 准备",
+      "recognized": ["新娘", "准备"],
+      "similarity": 1.0,
+      "elapsed_ms": 360.67
+    },
+    {
+      "file": "03_mixed.png",
+      "expected": "Wedding 2026",
+      "recognized": ["Wedding 2026"],
+      "similarity": 1.0,
+      "elapsed_ms": 354.43
+    },
+    {
+      "file": "04_time.png",
+      "expected": "戒指交换 18:30",
+      "recognized": ["戒指交换", "18:30"],
+      "similarity": 1.0,
+      "elapsed_ms": 421.63
+    },
+    {
+      "file": "05_low_contrast.png",
+      "expected": "今日关键词 拥抱",
+      "recognized": ["今日关键词", "拥抱"],
+      "similarity": 1.0,
+      "elapsed_ms": 395.66
+    },
+    {
+      "file": "06_rotated.png",
+      "expected": "幸福定格",
+      "recognized": ["幸福定格"],
+      "similarity": 1.0,
+      "elapsed_ms": 335.33
+    }
+  ]
+}

@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-06T18:40:19.697725+00:00",
+  "platform": "macOS",
+  "architecture": "arm64",
+  "version": "2.0.0-rc.1",
+  "fixturePolicy": {
+    "sourceDirectoriesReadOnly": true,
+    "photoPairCount": 1,
+    "cleanupOrphanCount": 1,
+    "quickCutImageCount": 2,
+    "workingCopiesInsideProjectBuild": true,
+    "sourceBytesUnchanged": true
+  },
+  "workflows": {
+    "rename": {
+      "passed": true,
+      "operations": 2,
+      "undoOperations": 2,
+      "manifestCreated": true,
+      "journalClearedAfterUndo": true,
+      "contentRestored": true
+    },
+    "cleanup": {
+      "passed": true,
+      "scannedImages": 3,
+      "orphanCount": 1,
+      "moved": 1,
+      "restored": 1,
+      "contentRestored": true
+    },
+    "xmpSync": {
+      "passed": true,
+      "operations": 1,
+      "undoOperations": 1,
+      "manifestCreated": true,
+      "rating": 5,
+      "label": "Select",
+      "rawBytesUnchanged": true,
+      "sidecarRemovedAfterUndo": true
+    },
+    "quickCut": {
+      "passed": true,
+      "inputCount": 2,
+      "exactMatches": 2,
+      "visionLibraryFromReleaseApp": true,
+      "ffmpegFromReleaseApp": true,
+      "exports": {
+        "ALIGNED_PNG": {
+          "fileCount": 2,
+          "totalFrames": 2,
+          "bytes": 194860
+        },
+        "FRAME_SEQUENCE": {
+          "fileCount": 4,
+          "totalFrames": 4,
+          "bytes": 389720
+        },
+        "MP4": {
+          "fileCount": 1,
+          "totalFrames": 4,
+          "bytes": 70245,
+          "probe": {
+            "available": true,
+            "streams": [
+              {
+                "codec_type": "video",
+                "avg_frame_rate": "30/1",
+                "nb_read_frames": "4"
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "releaseGate": {
+    "candidateIntegrityPassed": true,
+    "artifactChecks": [
+      {
+        "name": "Xuying-Toolbox-2.0.0-rc.1-macos-arm64.dmg",
+        "exists": true,
+        "sizeMatches": true,
+        "sha256Matches": true,
+        "sha256SumsMatches": true
+      },
+      {
+        "name": "Xuying-Toolbox-2.0.0-rc.1-macos-arm64.zip",
+        "exists": true,
+        "sizeMatches": true,
+        "sha256Matches": true,
+        "sha256SumsMatches": true
+      },
+      {
+        "name": "sources/ffmpeg-9.0.1.tar.xz",
+        "exists": true,
+        "sizeMatches": true,
+        "sha256Matches": true,
+        "sha256SumsMatches": true
+      }
+    ],
+    "versions": {
+      "projectPep440": "2.0.0rc1",
+      "releaseLabel": "2.0.0-rc.1",
+      "bundleMarketingVersion": "2.0.0",
+      "bundleBuild": "1",
+      "policyPassed": true
+    },
+    "identity": {
+      "displayName": "旭影工具箱",
+      "bundleId": "com.xuying.toolbox.v2",
+      "architecture": "arm64",
+      "minimumSystem": "13.0"
+    },
+    "signing": {
+      "codeStructureValid": true,
+      "developerIdAvailable": false,
+      "gatekeeperAccepted": false,
+      "notarizationTicketStapled": false
+    },
+    "publication": {
+      "cleanWorktree": false,
+      "expectedTag": "v2.0.0-rc.1",
+      "tagExists": false,
+      "githubRemoteConfigured": false,
+      "githubReleaseVerified": false
+    },
+    "windows": {
+      "artifactDirectoryExists": false,
+      "realMachineAcceptancePassed": false
+    }
+  },
+  "summary": {
+    "macWorkflowRegressionPassed": true,
+    "macCandidateIntegrityPassed": true,
+    "formalMacReleaseReady": false,
+    "crossPlatformReleaseReady": false,
+    "status": "internal-rc-validated"
+  }
+}

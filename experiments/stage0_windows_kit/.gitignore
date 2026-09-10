@@ -1,0 +1,11 @@
+.venv/
+work/
+results/*
+!results/.gitkeep
+input/real/*
+!input/real/.gitkeep
+qml/pysidedeploy.spec
+qml/deployment/
+qml/*.exe
+qml/*.dist/
+qml/*.build/

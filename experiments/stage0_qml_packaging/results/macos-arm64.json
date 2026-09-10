@@ -1,0 +1,37 @@
+{
+  "scope": "minimal-qml-proof",
+  "not_product_build": true,
+  "platform": "macOS-26.5.2-arm64",
+  "python": "3.12.1",
+  "pyside6": "6.11.2",
+  "results": [
+    {
+      "tool": "PyInstaller",
+      "version": "6.22.2",
+      "mode": "onedir-app",
+      "build_succeeded": true,
+      "offscreen_launch_exit": 0,
+      "visible_launch_exit": 0,
+      "architecture": "arm64",
+      "bundle_size_kib": 418544,
+      "bundle_size_mib": 408.73,
+      "codesign_deep_strict": true,
+      "overcollected_qml_modules": true
+    },
+    {
+      "tool": "pyside6-deploy/Nuitka",
+      "version": "PySide6 6.11.2 / Nuitka 4.1.2",
+      "mode": "standalone-app",
+      "build_succeeded": true,
+      "offscreen_launch_exit": 0,
+      "visible_launch_exit": 0,
+      "architecture": "arm64",
+      "bundle_size_kib": 432976,
+      "bundle_size_mib": 422.83,
+      "codesign_deep_strict": false,
+      "codesign_failure": "Main.qml subcomponent is not signed",
+      "overcollected_qml_modules": true,
+      "nuitka_4_1_1_known_issue": "Nuitka/Nuitka#3899"
+    }
+  ]
+}

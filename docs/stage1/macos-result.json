@@ -1,0 +1,48 @@
+{
+  "stage": "1",
+  "scope": "macos-first",
+  "status": "passed",
+  "cross_platform_complete": false,
+  "platform": "macOS-26.5.2-arm64",
+  "python": "3.12.1",
+  "pyside6": "6.11.2",
+  "version": "2.0.0-alpha.1",
+  "locked_packages": 21,
+  "tests": {
+    "pytest_passed": 10,
+    "pytest_failed": 0,
+    "qml_lint_warnings": 0,
+    "ruff_passed": true,
+    "yaml_parse_passed": true
+  },
+  "source_launch": {
+    "visible_exit": 0
+  },
+  "package": {
+    "tool": "PyInstaller",
+    "tool_version": "6.22.2",
+    "architecture": "arm64",
+    "bundle_size_kib": 420224,
+    "bundle_size_mib": 410.38,
+    "offscreen_launch_exit": 0,
+    "visible_launch_exit": 0,
+    "codesign_deep_strict_exit": 0,
+    "developer_id_signed": false,
+    "notarized": false
+  },
+  "zip": {
+    "file": "旭影工具箱-2.0.0-alpha.1-stage1-mac-arm64.zip",
+    "bytes": 146834636,
+    "sha256": "cf75e6eadeedf5e1132cc17fc6c889a3d04c71b1ddf48ac29403284fb711ea96",
+    "integrity_passed": true,
+    "extracted_app_launch_exit": 0,
+    "extracted_codesign_exit": 0
+  },
+  "deferred": [
+    "Windows runtime tests",
+    "Windows packaging",
+    "Windows OCR selection",
+    "Developer ID signing and notarization",
+    "QML dependency size optimization"
+  ]
+}

@@ -17,6 +17,8 @@ qmlcache/
 build/
 dist/
 release/
+artifacts/releases/*
+!artifacts/releases/.gitkeep
 *.dmg
 *.zip
 *.exe
@@ -30,6 +32,8 @@ ui_config.json
 *.json.bak
 test-output/
 fixtures/private/
+/测试/
+/测试 2/
 
 # 编辑器与系统
 .DS_Store

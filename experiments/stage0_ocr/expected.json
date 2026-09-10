@@ -1,0 +1,8 @@
+[
+  {"file": "01_chinese.png", "expected": "婚礼跟拍"},
+  {"file": "02_chinese_spaces.png", "expected": "新娘 准备"},
+  {"file": "03_mixed.png", "expected": "Wedding 2026"},
+  {"file": "04_time.png", "expected": "戒指交换 18:30"},
+  {"file": "05_low_contrast.png", "expected": "今日关键词 拥抱"},
+  {"file": "06_rotated.png", "expected": "幸福定格"}
+]

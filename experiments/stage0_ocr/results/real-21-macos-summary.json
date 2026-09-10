@@ -1,0 +1,43 @@
+{
+  "scope": "user-authorized-real-screenshots-summary",
+  "images_committed": false,
+  "source_count": 21,
+  "source_total_bytes": 3974150,
+  "unique_sha256_count": 21,
+  "keyword": "AGI",
+  "keyword_basis": "inferred from repeated screenshot content; editable in Windows kit",
+  "platform": "macOS-26.5.2-arm64",
+  "xcode": "26.6 (17F113)",
+  "engines": [
+    {
+      "engine": "Apple Vision",
+      "found_count": 21,
+      "candidate_count": 93,
+      "average_image_ms": 281.58,
+      "box_method": "vision-substring-box"
+    },
+    {
+      "engine": "RapidOCR",
+      "version": "3.9.2",
+      "found_count": 21,
+      "candidate_count": 100,
+      "init_ms": 221.26,
+      "average_image_ms": 617.67,
+      "box_method": "proportional-line-estimate"
+    }
+  ],
+  "selected_box_comparison": {
+    "center_delta_mean": 0.043814,
+    "center_delta_median": 0.01726,
+    "center_delta_max": 0.394498,
+    "iou_mean": 0.434153,
+    "iou_median": 0.523529,
+    "candidate_count_diff_images": 6,
+    "note": "RapidOCR keyword boxes are proportional estimates, so IoU is indicative only."
+  },
+  "observations": [
+    "Both engines found AGI in all 21 images.",
+    "RapidOCR found 7 more exact candidates overall.",
+    "On two inspected outliers, RapidOCR detected a nearer-center AGI occurrence that Vision missed."
+  ]
+}
