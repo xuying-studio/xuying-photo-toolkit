@@ -167,7 +167,7 @@ def test_execute_and_undo_are_non_cancellable(qtbot, tmp_path: Path) -> None:
     qtbot.waitUntil(lambda: not view_model.busy, timeout=2000)
     assert completed.args == ["execute", 1]
     assert view_model.canUndo
-    assert view_model.manifestPath == "/fixtures/manifest.json"
+    assert Path(view_model.manifestPath) == Path("/fixtures/manifest.json")
 
     with qtbot.waitSignal(view_model.actionCompleted, timeout=2000) as undone:
         view_model.undo()

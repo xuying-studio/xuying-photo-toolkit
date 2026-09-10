@@ -13,6 +13,7 @@ from xuying_toolbox.infrastructure.ocr.macos_vision import (
 )
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="仅在 macOS 验证 Apple Vision")
 def test_adapter_reports_missing_bridge(tmp_path: Path) -> None:
     adapter = MacVisionOCRAdapter(tmp_path / "missing.dylib")
 

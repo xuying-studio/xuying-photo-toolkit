@@ -35,10 +35,23 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --locked --group dev
 
-      - name: Run pytest
+      - name: Build macOS native test bridges
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          ./scripts/build-macos-vision.sh
+          ./scripts/build-macos-visuals.sh
+
+      - name: Run full pytest on macOS
+        if: runner.os == 'macOS'
         run: uv run pytest
 
+      - name: Run cross-platform core pytest on Windows
+        if: runner.os == 'Windows'
+        run: uv run pytest -m "not qml"
+
       - name: Run offscreen QML smoke
+        if: runner.os == 'macOS'
         shell: bash
         env:
           QT_QPA_PLATFORM: offscreen

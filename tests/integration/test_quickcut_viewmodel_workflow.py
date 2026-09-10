@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,8 @@ from xuying_toolbox.domain.services.quickcut import alignment_geometry, transfor
 from xuying_toolbox.infrastructure.persistence.paths import SupportPaths
 
 
+@pytest.mark.qml
+@pytest.mark.skipif(sys.platform != "darwin", reason="仅在 macOS 验证 Apple Vision 工作流")
 def test_quickcut_import_recognize_preview_and_page_state(
     qtbot,
     monkeypatch,
