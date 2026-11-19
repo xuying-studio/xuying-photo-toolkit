@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "xuying-toolbox"
-version = "2.0.0rc1"
+version = "2.0.0rc2"
 description = "旭影工具箱的 PySide6 / Qt Quick 跨平台重构版"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"

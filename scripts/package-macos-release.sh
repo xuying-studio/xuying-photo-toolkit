@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="2.0.0-rc.1"
+VERSION="2.0.0-rc.2"
 PRODUCT="旭影工具箱"
 ASSET_STEM="Xuying-Toolbox-$VERSION-macos-arm64"
 DIST_DIR="$ROOT/build/release-dist"
