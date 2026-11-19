@@ -85,7 +85,9 @@ def test_cleanup_items_model_exposes_preview_fields() -> None:
     assert model.roleNames()[model.ModelDataRole] == b"modelData"
 
 
-def test_viewmodel_scans_in_background_and_requires_confirmation(qtbot, tmp_path: Path) -> None:
+def test_viewmodel_scans_in_background_then_request_execute_runs_directly(
+    qtbot, tmp_path: Path
+) -> None:
     use_case = FakeCleanupUseCase()
     view_model = CleanupViewModel(use_case)
     main_thread = threading.get_ident()
@@ -103,10 +105,12 @@ def test_viewmodel_scans_in_background_and_requires_confirmation(qtbot, tmp_path
     assert view_model.stats["pairedTargetCount"] == 1
     assert view_model.canExecute
 
-    with qtbot.waitSignal(view_model.confirmationRequested, timeout=1000) as confirmation:
+    # 用户要求去掉二次确认弹窗：requestExecute 必须直接开始执行。
+    with qtbot.waitSignal(view_model.actionCompleted, timeout=2000) as executed:
         view_model.requestExecute()
-    assert "1 个文件" in confirmation.args[1]
-    assert use_case.execute_calls == 0
+    qtbot.waitUntil(lambda: not view_model.busy, timeout=2000)
+    assert executed.args == ["execute", 1]
+    assert use_case.execute_calls == 1
 
 
 def test_execute_is_non_cancellable_and_enables_restore(qtbot, tmp_path: Path) -> None:

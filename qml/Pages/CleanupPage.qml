@@ -3,7 +3,6 @@ import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
 import "../Components"
-import "../Dialogs"
 import "../Themes" as Themes
 
 Item {
@@ -251,14 +250,6 @@ Item {
         onAccepted: root.viewModel.setFolderUrl(selectedFolder)
     }
 
-    ConfirmDialog {
-        id: confirmDialog
-        objectName: "cleanupConfirmDialog"
-        anchors.centerIn: Overlay.overlay
-        destructive: true
-        onConfirmed: root.viewModel.executeConfirmed()
-    }
-
     FeedbackToast {
         id: toast
         objectName: "cleanupToast"
@@ -270,12 +261,6 @@ Item {
 
     Connections {
         target: root.viewModel
-
-        function onConfirmationRequested(title, description) {
-            confirmDialog.titleText = title
-            confirmDialog.description = description
-            confirmDialog.open()
-        }
 
         function onNotificationRequested(message, level) {
             toast.show(message, level)

@@ -5,13 +5,16 @@ from PySide6.QtCore import Q_ARG, QMetaObject, QObject, QPoint, QPointF, Qt, QUr
 from PySide6.QtGui import QColor
 from PySide6.QtTest import QTest
 
+from xuying_toolbox.application.cleanup import CleanupUseCase
 from xuying_toolbox.bootstrap import create_runtime
 from xuying_toolbox.domain.models.quickcut import ProjectSettings
 from xuying_toolbox.domain.services.xmp import insert_jpeg_xmp
+from xuying_toolbox.infrastructure.filesystem.catalog import LocalPhotoCatalog
 from xuying_toolbox.infrastructure.persistence.paths import SupportPaths
 from xuying_toolbox.infrastructure.persistence.quickcut_settings import (
     JsonQuickCutSettingsStore,
 )
+from xuying_toolbox.platform.macos.trash import MacTrashAdapter
 
 THEME_IDS = (
     "professional_dark",
@@ -574,7 +577,7 @@ def test_rename_page_scans_preview_and_opens_confirmation(
 
 
 @pytest.mark.qml
-def test_cleanup_page_scans_preview_and_opens_confirmation(
+def test_cleanup_page_scans_preview_and_executes_directly(
     qtbot,
     monkeypatch,
     tmp_path: Path,
@@ -582,6 +585,8 @@ def test_cleanup_page_scans_preview_and_opens_confirmation(
     qml_root = Path(__file__).resolve().parents[2] / "qml"
     monkeypatch.setenv("XUYING_QML_DIR", str(qml_root))
     (tmp_path / "A001.JPG").write_bytes(b"jpg-fixture")
+    fake_trash = tmp_path / "fake-trash"
+    fake_trash.mkdir()
     runtime = create_runtime(["xuying-toolbox-qml-cleanup-test"])
     root = runtime.engine.rootObjects()[0]
     shell = root.findChild(QObject, "mainShell")
@@ -589,9 +594,22 @@ def test_cleanup_page_scans_preview_and_opens_confirmation(
     scan_button = root.findChild(QObject, "scanCleanupButton")
     execute_button = root.findChild(QObject, "executeCleanupButton")
     preview_table = root.findChild(QObject, "cleanupPreviewTable")
-    confirm_dialog = root.findChild(QObject, "cleanupConfirmDialog")
     qtbot.waitUntil(root.isVisible, timeout=3000)
     shell.setProperty("currentPage", 1)
+
+    # 扫描预览已明示结果，点执行直接开始清理（用户要求去掉二次确认弹窗）；
+    # 用假废纸篓替换装配好的用例，测试不触碰真实废纸篓。
+    support = SupportPaths.from_root(tmp_path / "support")
+
+    def fake_send_to_trash(path: str) -> Path:
+        target = fake_trash / Path(path).name
+        Path(path).rename(target)
+        return target
+
+    view_model._use_case = CleanupUseCase(
+        LocalPhotoCatalog(),
+        MacTrashAdapter(support, send_to_trash=fake_send_to_trash),
+    )
 
     view_model.folderPath = str(tmp_path)
     qtbot.waitUntil(lambda: scan_button.property("enabled"), timeout=1000)
@@ -603,11 +621,13 @@ def test_cleanup_page_scans_preview_and_opens_confirmation(
     assert preview_table.property("rowCount") == 1
     assert execute_button.property("enabled") is True
 
-    with qtbot.waitSignal(view_model.confirmationRequested, timeout=1000):
+    with qtbot.waitSignal(view_model.actionCompleted, timeout=3000) as executed:
         execute_button.click()
-    qtbot.waitUntil(lambda: confirm_dialog.property("visible"), timeout=1000)
-    confirm_dialog.close()
-    assert (tmp_path / "A001.JPG").read_bytes() == b"jpg-fixture"
+    qtbot.waitUntil(lambda: not view_model.busy, timeout=2000)
+
+    assert executed.args == ["execute", 1]
+    assert not (tmp_path / "A001.JPG").exists()
+    assert (fake_trash / "A001.JPG").read_bytes() == b"jpg-fixture"
 
     root.close()
     runtime.engine.deleteLater()

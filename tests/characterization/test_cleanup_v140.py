@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 from pathlib import Path
 
 import pytest
 
 from xuying_toolbox.application.cleanup import CleanupUseCase
-from xuying_toolbox.domain.models.photo import CleanupItem
+from xuying_toolbox.domain.models.photo import RECOVERY_DIR_NAME, CleanupItem
 from xuying_toolbox.domain.services.cleanup import scan_cleanup
 from xuying_toolbox.infrastructure.filesystem.catalog import LocalPhotoCatalog
 from xuying_toolbox.infrastructure.persistence.paths import SupportPaths
@@ -86,8 +85,9 @@ def test_mac_adapter_records_before_each_move_and_restores_without_overwrite(
     assert (moved, errors) == (1, [])
     assert not photo.exists()
     payload = json.loads(paths.cleanup_undo.read_text(encoding="utf-8"))
-    recovery = Path(payload["items"][0]["recovery_path"])
-    assert recovery.exists()
+    assert payload["items"][0]["original_path"] == str(photo)
+    # 纯废纸篓语义：不创建任何隐藏备份目录。
+    assert not (photo_dir / RECOVERY_DIR_NAME).exists()
 
     photo.write_bytes(b"new-user-file")
     restored, restore_errors = adapter.restore()
@@ -96,7 +96,7 @@ def test_mac_adapter_records_before_each_move_and_restores_without_overwrite(
     assert json.loads(paths.cleanup_undo.read_text(encoding="utf-8"))["items"]
 
 
-def test_mac_adapter_falls_back_to_copy_and_restores_from_fake_trash(tmp_path: Path) -> None:
+def test_move_never_creates_backup_and_restores_from_trash(tmp_path: Path) -> None:
     photo_dir = tmp_path / "photos"
     trash_dir = tmp_path / "fake-trash"
     photo_dir.mkdir()
@@ -105,30 +105,91 @@ def test_mac_adapter_falls_back_to_copy_and_restores_from_fake_trash(tmp_path: P
     photo.write_bytes(MINIMAL_JPEG)
     paths = SupportPaths.from_root(tmp_path / "support")
 
-    def fake_send_to_trash(path: str) -> None:
+    def fake_send_to_trash(path: str) -> Path:
         source = Path(path)
-        source.rename(trash_dir / source.name)
+        target = trash_dir / source.name
+        source.rename(target)
+        return target
 
     adapter = MacTrashAdapter(paths, send_to_trash=fake_send_to_trash)
-    original_link = os.link
+    moved, errors = adapter.move(
+        CleanupUseCase(LocalPhotoCatalog(), FakeTrashAdapter()).scan(photo_dir, "JPG").items
+    )
 
-    def fail_link(*args: object, **kwargs: object) -> None:
-        raise OSError("simulated unsupported hardlink")
-
-    os.link = fail_link  # type: ignore[assignment]
-    try:
-        moved, errors = adapter.move(
-            CleanupUseCase(LocalPhotoCatalog(), FakeTrashAdapter()).scan(photo_dir, "JPG").items
-        )
-    finally:
-        os.link = original_link
-
+    # 用户决策：废纸篓是唯一文件来源，任何卷（含 exFAT/网络卷）都不建恢复副本。
     assert (moved, errors) == (1, [])
     payload = json.loads(paths.cleanup_undo.read_text(encoding="utf-8"))
-    assert payload["items"][0]["recovery_method"] == "copy"
+    assert payload["items"][0]["recovery_path"] is None
+    assert not (tmp_path / RECOVERY_DIR_NAME).exists()
     restored, restore_errors = adapter.restore()
     assert (restored, restore_errors) == (1, [])
     assert photo.read_bytes() == MINIMAL_JPEG
+    assert not (trash_dir / photo.name).exists()
+
+
+def test_restore_consumes_trash_copy_without_backup(tmp_path: Path) -> None:
+    photo_dir = tmp_path / "photos"
+    trash_dir = tmp_path / "fake-trash"
+    photo_dir.mkdir()
+    trash_dir.mkdir()
+    photo = photo_dir / "A001.JPG"
+    photo.write_bytes(MINIMAL_JPEG)
+    paths = SupportPaths.from_root(tmp_path / "support")
+
+    def fake_send_to_trash(path: str) -> Path:
+        source = Path(path)
+        target = trash_dir / source.name
+        source.rename(target)
+        return target
+
+    adapter = MacTrashAdapter(
+        paths,
+        send_to_trash=fake_send_to_trash,
+        restore_fallback=lambda *_args: (False, "unused"),
+    )
+    adapter.move([CleanupItem(str(photo), "RAW")])
+
+    restored, errors = adapter.restore()
+
+    # 撤回即从废纸篓拿回文件，全程无备份目录。
+    assert (restored, errors) == (1, [])
+    assert not (trash_dir / photo.name).exists()
+    assert photo.read_bytes() == MINIMAL_JPEG
+    assert not (photo_dir / RECOVERY_DIR_NAME).exists()
+
+
+def test_restore_fails_clearly_when_trash_emptied(tmp_path: Path) -> None:
+    photo_dir = tmp_path / "photos"
+    trash_dir = tmp_path / "fake-trash"
+    photo_dir.mkdir()
+    trash_dir.mkdir()
+    photo = photo_dir / "A001.JPG"
+    photo.write_bytes(MINIMAL_JPEG)
+    paths = SupportPaths.from_root(tmp_path / "support")
+
+    def fake_send_to_trash(path: str) -> Path:
+        source = Path(path)
+        target = trash_dir / source.name
+        source.rename(target)
+        return target
+
+    adapter = MacTrashAdapter(
+        paths,
+        send_to_trash=fake_send_to_trash,
+        restore_fallback=lambda *_args: (False, "unused"),
+    )
+    adapter.move([CleanupItem(str(photo), "RAW")])
+    # 模拟废纸篓被清空。
+    (trash_dir / photo.name).unlink()
+
+    restored, errors = adapter.restore()
+
+    # 用户决策：废纸篓是唯一来源，清空后文件无法找回，但错误信息必须明确。
+    assert restored == 0
+    assert errors and "废纸篓" in errors[0]
+    assert not photo.exists()
+    payload = json.loads(paths.cleanup_undo.read_text(encoding="utf-8"))
+    assert payload["items"]  # 失败记录保留，便于用户排查
 
 
 def test_invalid_cleanup_kind_is_rejected() -> None:
@@ -206,7 +267,8 @@ def test_post_move_error_keeps_recovery_record(tmp_path: Path) -> None:
 
     assert moved == 0
     assert errors
-    assert Path(payload["items"][0]["recovery_path"]).exists()
+    # 文件已被移入废纸篓但调用报错：撤回记录必须保留，便于找回文件。
+    assert payload["items"][0]["original_path"] == str(photo)
 
 
 def test_partial_restore_keeps_only_unfinished_record(tmp_path: Path) -> None:
@@ -220,9 +282,11 @@ def test_partial_restore_keeps_only_unfinished_record(tmp_path: Path) -> None:
     second.write_bytes(b"two")
     paths = SupportPaths.from_root(tmp_path / "support")
 
-    def fake_trash(path: str) -> None:
+    def fake_trash(path: str) -> Path:
         source = Path(path)
-        source.rename(trash_dir / source.name)
+        target = trash_dir / source.name
+        source.rename(target)
+        return target
 
     adapter = MacTrashAdapter(paths, send_to_trash=fake_trash)
     adapter.move([CleanupItem(str(first), "RAW"), CleanupItem(str(second), "RAW")])
@@ -239,7 +303,7 @@ def test_partial_restore_keeps_only_unfinished_record(tmp_path: Path) -> None:
     assert updates[-1][0] == updates[-1][1] == 2
 
 
-def test_restore_uses_recorded_trash_path_when_backup_is_missing(tmp_path: Path) -> None:
+def test_restore_uses_recorded_trash_path(tmp_path: Path) -> None:
     original_dir = tmp_path / "photos"
     trash_dir = tmp_path / "trash"
     original_dir.mkdir()
@@ -311,7 +375,7 @@ def test_mac_adapter_refuses_symbolic_link_even_if_called_directly(tmp_path: Pat
     assert not paths.cleanup_undo.exists()
 
 
-def test_runtime_error_from_trash_is_structured_and_cleans_pending_backup(tmp_path: Path) -> None:
+def test_runtime_error_from_trash_is_structured(tmp_path: Path) -> None:
     photo = tmp_path / "A001.JPG"
     photo.write_bytes(MINIMAL_JPEG)
     paths = SupportPaths.from_root(tmp_path / "support")
@@ -326,7 +390,7 @@ def test_runtime_error_from_trash_is_structured_and_cleans_pending_backup(tmp_pa
     assert errors and "wrapped permission error" in errors[0]
     assert photo.exists()
     assert not paths.cleanup_undo.exists()
-    assert not (tmp_path / ".摄影文件后期处理助手-恢复备份").exists()
+    assert not (tmp_path / RECOVERY_DIR_NAME).exists()
 
 
 def test_returned_trash_path_is_saved_in_record(tmp_path: Path) -> None:
@@ -349,7 +413,7 @@ def test_returned_trash_path_is_saved_in_record(tmp_path: Path) -> None:
     assert payload["items"][0]["trash_path"] == str(trash_dir / photo.name)
 
 
-def test_inode_locator_restores_when_backup_and_recorded_path_are_missing(tmp_path: Path) -> None:
+def test_inode_locator_restores_when_recorded_path_is_missing(tmp_path: Path) -> None:
     photos = tmp_path / "photos"
     trash = tmp_path / "trash"
     photos.mkdir()

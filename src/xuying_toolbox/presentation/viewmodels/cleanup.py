@@ -19,7 +19,6 @@ from xuying_toolbox.presentation.viewmodels.folder_selection import (
 class CleanupViewModel(QObject):
     stateChanged = Signal()
     progressChanged = Signal(int, int, str)
-    confirmationRequested = Signal(str, str)
     notificationRequested = Signal(str, str)
     actionCompleted = Signal(str, int)
     failed = Signal(str, str)
@@ -188,13 +187,8 @@ class CleanupViewModel(QObject):
 
     @Slot()
     def requestExecute(self) -> None:
-        if not self.canExecute or self._result is None:
-            return
-        self.confirmationRequested.emit(
-            f"确认清理孤立 {self._delete_kind}",
-            f"将把 {len(self._result.items)} 个文件移入系统废纸篓。\n"
-            "每个文件都会先保留安全恢复副本和恢复记录。",
-        )
+        # 用户要求：扫描预览已明示结果，点执行按钮即确认，无需二次弹窗。
+        self.executeConfirmed()
 
     @Slot()
     def executeConfirmed(self) -> None:
@@ -205,7 +199,7 @@ class CleanupViewModel(QObject):
             "execute",
             lambda progress: self._use_case.execute(progress),
             phase="executing",
-            status="正在创建恢复副本并移入废纸篓，此阶段不可中断…",
+            status="正在移入废纸篓，此阶段不可中断…",
             cancellable=False,
         )
 

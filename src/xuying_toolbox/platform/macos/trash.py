@@ -1,4 +1,4 @@
-"""macOS 废纸篓适配器：先保存恢复副本，再移入废纸篓。"""
+"""macOS 废纸篓适配器：废纸篓是清理文件的唯一来源，撤回仅从废纸篓还原。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import json
 import os
 import shutil
 import subprocess
-import uuid
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, replace
 from datetime import datetime
@@ -14,7 +13,7 @@ from pathlib import Path
 
 from send2trash import send2trash
 
-from xuying_toolbox.domain.models.photo import RECOVERY_DIR_NAME, CleanupItem, TrashRecord
+from xuying_toolbox.domain.models.photo import CleanupItem, TrashRecord
 from xuying_toolbox.domain.services.progress import ProgressCallback, report_progress
 from xuying_toolbox.infrastructure.persistence.paths import SupportPaths
 
@@ -140,34 +139,23 @@ class MacTrashAdapter:
         if not items:
             return 0, []
         self.paths.ensure_directories()
-        common_root = Path(os.path.commonpath([str(Path(item.path).parent) for item in items]))
-        recovery_root = common_root / RECOVERY_DIR_NAME / uuid.uuid4().hex
         records: list[TrashRecord] = []
         errors: list[str] = []
         moved = 0
         for index, item in enumerate(items, start=1):
             source = Path(item.path)
-            recovery_path: Path | None = None
             pending: TrashRecord | None = None
             try:
                 if source.is_symlink():
                     raise ValueError("不允许清理符号链接。")
                 stat = source.stat()
-                recovery_path = recovery_root / source.relative_to(common_root)
-                recovery_path.parent.mkdir(parents=True, exist_ok=True)
-                try:
-                    os.link(source, recovery_path)
-                    method = "hardlink"
-                except OSError:
-                    shutil.copy2(source, recovery_path)
-                    method = "copy"
+                # 用户决策：废纸篓是唯一文件来源，不创建任何恢复副本——
+                # 清空废纸篓即彻底删除，不残留任何隐藏目录占用空间。
                 pending = TrashRecord(
                     original_path=str(source),
                     deleted_at=datetime.now().astimezone().isoformat(),
                     device=stat.st_dev,
                     inode=stat.st_ino,
-                    recovery_path=str(recovery_path),
-                    recovery_method=method,
                 )
                 # 先落盘恢复记录，再触碰原照片；中断时仍有可追踪记录。
                 self._write_undo([*records, pending])
@@ -184,9 +172,6 @@ class MacTrashAdapter:
             except Exception as exc:  # noqa: BLE001
                 error_message = f"{source}：{exc}"
                 if source.exists():
-                    if recovery_path is not None:
-                        recovery_path.unlink(missing_ok=True)
-                        self._remove_empty_recovery_dirs(recovery_path.parent)
                     self._write_undo(records)
                 elif pending is not None:
                     # 废纸篓调用可能已移动文件后才报错；保留恢复记录最安全。
@@ -232,66 +217,49 @@ class MacTrashAdapter:
                     f"跳过恢复 {index}/{len(records)} · {original.name}",
                 )
                 continue
-            recovery_value = record.get("recovery_path")
-            recovery = Path(recovery_value) if recovery_value else None
-            if recovery is None or not recovery.exists():
-                trash_value = record.get("trash_path")
-                trash_path = Path(trash_value) if trash_value else None
-                if trash_path is None and self._trash_locator is not None:
-                    trash_path = self._trash_locator(
-                        original,
-                        record.get("device"),
-                        record.get("inode"),
-                    )
-                if trash_path is not None and trash_path.exists():
-                    try:
-                        shutil.move(str(trash_path), str(original))
-                        restored += 1
-                    except (OSError, ValueError):
-                        trash_path = None
-                if trash_path is None or not original.exists():
-                    succeeded, detail = self._restore_fallback(original, record)
-                    if succeeded and original.exists():
-                        restored += 1
-                    else:
-                        errors.append(
-                            f"找不到安全恢复副本：{original.name}"
-                            + (f"；{detail}" if detail else "；平台恢复未生成目标文件")
-                        )
-                        remaining.append(record)
+            if not original.parent.is_dir():
+                errors.append(f"原文件夹不存在：{original.parent}")
+                remaining.append(record)
                 report_progress(
                     progress,
                     index,
                     len(records),
-                    (
-                        f"已恢复文件 {index}/{len(records)} · {original.name}"
-                        if original.exists()
-                        else f"恢复失败 {index}/{len(records)} · {original.name}"
-                    ),
+                    f"恢复失败 {index}/{len(records)} · {original.name}",
                 )
                 continue
-            try:
-                if not original.parent.is_dir():
-                    errors.append(f"原文件夹不存在：{original.parent}")
-                    remaining.append(record)
-                    report_progress(
-                        progress,
-                        index,
-                        len(records),
-                        f"恢复失败 {index}/{len(records)} · {original.name}",
-                    )
-                    continue
-                shutil.move(str(recovery), str(original))
-                self._remove_empty_recovery_dirs(recovery.parent)
+            done = False
+            detail: str | None = None
+            # ① 按记录路径或 device/inode 定位废纸篓中的文件（撤回的唯一来源）。
+            trash_path = self._locate_trash_item(original, record)
+            if trash_path is not None:
+                try:
+                    shutil.move(str(trash_path), str(original))
+                    done = True
+                except (OSError, ValueError) as exc:
+                    detail = str(exc)
+            # ② Finder 放回兑底：处理废纸篓内改名等无法直接定位的情况。
+            if not done:
+                succeeded, finder_detail = self._restore_fallback(original, record)
+                detail = finder_detail or detail
+                if succeeded and original.exists():
+                    done = True
+            if done:
                 restored += 1
-            except (OSError, ValueError) as exc:
-                errors.append(f"{original.name}：{exc}")
+            else:
+                errors.append(
+                    f"废纸篓中未找到：{original.name}"
+                    + (f"；{detail}" if detail else "；废纸篓可能已被清空，文件已无法找回")
+                )
                 remaining.append(record)
             report_progress(
                 progress,
                 index,
                 len(records),
-                f"正在恢复文件 {index}/{len(records)} · {original.name}",
+                (
+                    f"已恢复文件 {index}/{len(records)} · {original.name}"
+                    if done
+                    else f"恢复失败 {index}/{len(records)} · {original.name}"
+                ),
             )
         if remaining:
             data["items"] = remaining
@@ -303,6 +271,22 @@ class MacTrashAdapter:
 
     def has_restore(self) -> bool:
         return self.paths.cleanup_undo.is_file()
+
+    def _locate_trash_item(self, original: Path, record: dict[str, object]) -> Path | None:
+        """按记录路径或 device/inode 定位废纸篓中的文件；找不到返回 None。"""
+        trash_value = record.get("trash_path")
+        trash_path = Path(trash_value) if trash_value else None
+        if (trash_path is None or not trash_path.exists()) and self._trash_locator is not None:
+            located = self._trash_locator(
+                original,
+                record.get("device"),
+                record.get("inode"),
+            )
+            if located is not None and located.exists():
+                trash_path = located
+        if trash_path is not None and trash_path.exists():
+            return trash_path
+        return None
 
     def _write_undo(self, records: list[TrashRecord]) -> None:
         if not records:
@@ -320,17 +304,3 @@ class MacTrashAdapter:
         temporary = self.paths.cleanup_undo.with_suffix(".tmp")
         temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         temporary.replace(self.paths.cleanup_undo)
-
-    def _remove_empty_recovery_dirs(self, start: Path) -> None:
-        current = start
-        while current.name != RECOVERY_DIR_NAME and current != current.parent:
-            try:
-                current.rmdir()
-            except OSError:
-                break
-            current = current.parent
-        if current.name == RECOVERY_DIR_NAME:
-            try:
-                current.rmdir()
-            except OSError:
-                pass
