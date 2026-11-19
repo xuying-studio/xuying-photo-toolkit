@@ -177,6 +177,87 @@ Item {
                         emptyHint: "扫描只生成预览，不会立即修改文件"
                     }
 
+                    // 冲突与警告详情：执行被阻止时，明确指出是哪些文件、什么原因。
+                    Rectangle {
+                        objectName: "renameConflictPanel"
+                        Layout.fillWidth: true
+                        visible: root.viewModel.conflictCount > 0 || root.viewModel.warningCount > 0
+                        color: root.viewModel.conflictCount > 0 ?
+                                   Themes.Theme.dangerSoft : Themes.Theme.warningSoft
+                        radius: Themes.Theme.radiusMedium
+                        implicitHeight: issueColumn.implicitHeight + Themes.Theme.spaceLg
+                        Layout.preferredHeight: Math.min(
+                            issueColumn.implicitHeight + Themes.Theme.spaceLg, 160)
+
+                        Flickable {
+                            id: issueFlickable
+                            anchors.fill: parent
+                            anchors.margins: Themes.Theme.spaceMd
+                            contentHeight: issueColumn.implicitHeight
+                            clip: true
+                            boundsBehavior: Flickable.StopAtBounds
+
+                            ColumnLayout {
+                                id: issueColumn
+                                width: issueFlickable.width
+                                spacing: Themes.Theme.spaceXs
+
+                                Label {
+                                    objectName: "renameIssueSummary"
+                                    Layout.fillWidth: true
+                                    text: root.viewModel.conflictCount > 0 ?
+                                              (root.viewModel.warningCount > 0 ?
+                                                   "发现 " + root.viewModel.conflictCount +
+                                                   " 个冲突、" + root.viewModel.warningCount +
+                                                   " 个提醒，执行已被阻止" :
+                                                   "发现 " + root.viewModel.conflictCount +
+                                                   " 个冲突，执行已被阻止") :
+                                              "发现 " + root.viewModel.warningCount + " 个提醒"
+                                    color: root.viewModel.conflictCount > 0 ?
+                                               Themes.Theme.danger : Themes.Theme.warning
+                                    font.family: Themes.Theme.fontFamily
+                                    font.pixelSize: Themes.Theme.fontCaption
+                                    font.weight: Font.DemiBold
+                                    wrapMode: Text.WordWrap
+                                }
+
+                                Repeater {
+                                    objectName: "renameConflictList"
+                                    model: root.viewModel.conflicts
+
+                                    Label {
+                                        objectName: "renameConflictItem"
+                                        Layout.fillWidth: true
+                                        required property string modelData
+                                        text: "冲突 · " + modelData
+                                        color: Themes.Theme.danger
+                                        font.family: Themes.Theme.fontFamily
+                                        font.pixelSize: Themes.Theme.fontCaption
+                                        wrapMode: Text.WordWrap
+                                        elide: Text.ElideNone
+                                    }
+                                }
+
+                                Repeater {
+                                    objectName: "renameWarningList"
+                                    model: root.viewModel.warnings
+
+                                    Label {
+                                        objectName: "renameWarningItem"
+                                        Layout.fillWidth: true
+                                        required property string modelData
+                                        text: "提醒 · " + modelData
+                                        color: Themes.Theme.warning
+                                        font.family: Themes.Theme.fontFamily
+                                        font.pixelSize: Themes.Theme.fontCaption
+                                        wrapMode: Text.WordWrap
+                                        elide: Text.ElideNone
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: Themes.Theme.spaceSm

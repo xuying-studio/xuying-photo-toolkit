@@ -24,9 +24,26 @@ RENAMED_STEM_RE = re.compile(
 
 
 def extract_original_number(filename: str) -> str | None:
-    """提取文件名中的第一段连续数字。"""
-    match = re.search(r"(\d+)", Path(filename).stem)
-    return match.group(1) if match else None
+    """提取文件名主名中最后一段连续数字作为相机编号。
+
+    相机原始文件编号约定在主名末尾（如 DSC03213、IMG_1234、C2_03712）。
+    取最后一段而不是第一段，是为了兼容带数字的自定义前缀
+    （如双机位的 "C2_"、"M4_"），避免把前缀里的数字误当成编号。
+    """
+    matches = re.findall(r"(\d+)", Path(filename).stem)
+    return matches[-1] if matches else None
+
+
+def extract_stem_prefix(filename: str) -> str:
+    """提取文件名主名中末尾编号之前的前缀部分。
+
+    用于双机位等场景：不同相机的文件用不同前缀区分时，
+    相同编号（如 C2_03712 与 M4_03712）属于不同照片，不能合并为同组。
+    主名中没有数字时返回完整主名。
+    """
+    stem = Path(filename).stem
+    match = re.search(r"_?\d+$", stem)
+    return stem[: match.start()] if match else stem
 
 
 def sidecar_target_for_rename(image_source: Path, image_target: Path, sidecar_source: Path) -> Path:
@@ -68,7 +85,12 @@ def build_rename_plan(
                 skipped += 1
                 warnings.append(f"未找到原始编号，已跳过：{path}")
             else:
-                key = (str(path.parent).casefold(), number)
+                # 前缀参与分组：不同相机（不同前缀）的相同编号不是同一张照片。
+                key = (
+                    str(path.parent).casefold(),
+                    extract_stem_prefix(path.name).casefold(),
+                    number,
+                )
                 groups.setdefault(key, []).append(path)
                 stamp = metadata_reader.capture_time(path)
                 if key not in capture_times or stamp < capture_times[key]:
@@ -82,7 +104,7 @@ def build_rename_plan(
 
     ordered = sorted(
         ((capture_times[key], key, members) for key, members in groups.items()),
-        key=lambda item: (item[0], item[1][1], str(item[2][0]).casefold()),
+        key=lambda item: (item[0], item[1][1], item[1][2], str(item[2][0]).casefold()),
     )
     operations: list[RenameOperation] = []
     last_date: str | None = None
@@ -145,16 +167,18 @@ def find_rename_conflicts(
 ) -> list[str]:
     exists = path_exists or (lambda _path: False)
     source_keys = {str(Path(operation.source)).casefold() for operation in operations}
-    targets: dict[str, tuple[Path, int]] = {}
+    targets: dict[str, list[RenameOperation]] = {}
     for op in operations:
-        target = Path(op.target)
-        key = str(target).casefold()
-        previous = targets.get(key)
-        targets[key] = (target, 1 if previous is None else previous[1] + 1)
+        key = str(Path(op.target)).casefold()
+        targets.setdefault(key, []).append(op)
     conflicts: list[str] = []
-    for key, (target, count) in targets.items():
-        if count > 1:
-            conflicts.append(f"多个文件将被重命名为同一路径：{target}")
+    for key, ops in targets.items():
+        target = Path(ops[0].target)
+        if len(ops) > 1:
+            sources = "、".join(Path(op.source).name for op in ops)
+            conflicts.append(
+                f"多个文件将被重命名为同一路径：{target}（来源：{sources}）"
+            )
         elif exists(target) and key not in source_keys:
-            conflicts.append(f"目标文件已经存在：{target}")
+            conflicts.append(f"目标文件已经存在：{target}（来自：{Path(ops[0].source).name}）")
     return conflicts

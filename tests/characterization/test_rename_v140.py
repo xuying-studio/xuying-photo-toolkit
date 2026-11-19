@@ -217,3 +217,22 @@ def test_case_only_duplicate_targets_are_blocked() -> None:
 
     assert len(conflicts) == 1
     assert "多个文件" in conflicts[0]
+
+
+def test_digit_prefix_dual_camera_renames_without_conflict(tmp_path: Path) -> None:
+    # 回归：双机位用带数字的前缀（C2_、M4_）区分相机时，
+    # 编号提取误取前缀数字、分组忽略前缀，都会导致全量冲突。
+    (tmp_path / "M4_03213.ARW").write_bytes(b"raw-a")
+    (tmp_path / "M4_03213.JPG").write_bytes(b"jpg-a")
+    (tmp_path / "C2_03712.ARW").write_bytes(b"raw-b")
+    (tmp_path / "C2_03712.JPG").write_bytes(b"jpg-b")
+    (tmp_path / "M4_03712.ARW").write_bytes(b"raw-c")
+
+    plan = scan(tmp_path, FixedMetadata())
+
+    assert plan.stats == RenameScanStats(5, 3, 2, 0, 0, 0)
+    assert plan.conflicts == []
+    image_targets = {
+        Path(op.target).name for op in plan.operations if op.kind == "照片"
+    }
+    assert len(image_targets) == 5
