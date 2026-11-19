@@ -17,6 +17,7 @@ from pathlib import Path
 from xuying_toolbox.application.cleanup import CleanupUseCase
 from xuying_toolbox.application.quickcut import QuickCutUseCase
 from xuying_toolbox.domain.models.quickcut import ExportMode, ProjectSettings, RecognitionState
+from xuying_toolbox import __version__ as VERSION_LABEL
 from xuying_toolbox.infrastructure.composition import (
     create_rename_use_case,
     create_xmp_sync_use_case,
@@ -31,7 +32,6 @@ from xuying_toolbox.infrastructure.video.ffmpeg_export import FFmpegQuickCutExpo
 from xuying_toolbox.platform.macos.trash import MacTrashAdapter
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION_LABEL = "2.0.0-rc.1"
 DEFAULT_RELEASE_DIR = ROOT / "artifacts/releases" / VERSION_LABEL / "macos-arm64"
 DEFAULT_WORK_DIR = ROOT / "build/stage8-macos-rc"
 DEFAULT_REPORT = ROOT / "docs/stage8/macos-validation-report.json"

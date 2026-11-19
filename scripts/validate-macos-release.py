@@ -8,11 +8,21 @@ import hashlib
 import json
 import os
 import plistlib
+import re
 import struct
 import subprocess
 import tempfile
 import zlib
 from pathlib import Path
+
+
+def _app_version() -> str:
+    """从包源码读取唯一版本来源，避免发布脚本版本漂移。"""
+    init = Path(__file__).resolve().parents[1] / "src" / "xuying_toolbox" / "__init__.py"
+    match = re.search(r'__version__\s*=\s*"([^"]+)"', init.read_text(encoding="utf-8"))
+    if match is None:
+        raise RuntimeError("无法从 src/xuying_toolbox/__init__.py 解析 __version__")
+    return match.group(1)
 
 
 def _png_chunk(kind: bytes, data: bytes) -> bytes:
@@ -187,7 +197,7 @@ def validate(app: Path) -> dict[str, object]:
     return {
         "app": app.name,
         "bundleIdentifier": expected["CFBundleIdentifier"],
-        "version": "2.0.0-rc.1",
+        "version": _app_version(),
         "architecture": "arm64",
         "minimumSystem": expected["LSMinimumSystemVersion"],
         "signatureVerified": True,

@@ -6,7 +6,17 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
+
+
+def _app_version() -> str:
+    """从包源码读取唯一版本来源，避免发布脚本版本漂移。"""
+    init = Path(__file__).resolve().parents[1] / "src" / "xuying_toolbox" / "__init__.py"
+    match = re.search(r'__version__\s*=\s*"([^"]+)"', init.read_text(encoding="utf-8"))
+    if match is None:
+        raise RuntimeError("无法从 src/xuying_toolbox/__init__.py 解析 __version__")
+    return match.group(1)
 
 
 def _sha256(path: Path) -> str:
@@ -35,7 +45,7 @@ def main() -> int:
         )
     payload = {
         "product": "旭影工具箱",
-        "version": "2.0.0-rc.1",
+        "version": _app_version(),
         "platform": "macOS",
         "architecture": "arm64",
         "minimumSystem": "13.0",
