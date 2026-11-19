@@ -20,6 +20,7 @@ EMPTY_STATS = RenameScanStats(0, 0, 0, 0, 0, 0)
 
 class RenameViewModel(QObject):
     stateChanged = Signal()
+    folderChanged = Signal(str)
     progressChanged = Signal(int, int, str)
     confirmationRequested = Signal(str, str)
     notificationRequested = Signal(str, str)
@@ -73,6 +74,8 @@ class RenameViewModel(QObject):
         self._phase = "idle"
         self._status_text = "可以开始只读扫描" if normalized else "请选择照片文件夹"
         self.stateChanged.emit()
+        # 通知共享文件夹同步器：其他工具页保持同一路径（用户切换工具无需重选）。
+        self.folderChanged.emit(normalized)
 
     @Property(str, notify=stateChanged)
     def phase(self) -> str:

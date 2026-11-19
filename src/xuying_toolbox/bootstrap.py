@@ -39,6 +39,7 @@ from xuying_toolbox.platform.macos.visual_effect import (
     MacVisualEffectAdapter,
 )
 from xuying_toolbox.presentation.application_settings import ApplicationSettingsViewModel
+from xuying_toolbox.presentation.folder_sync import bind_shared_folder
 from xuying_toolbox.presentation.qml_registry import (
     ApplicationInfo,
     register_qml_initial_properties,
@@ -148,6 +149,9 @@ def create_runtime(argv: Sequence[str] | None = None) -> ApplicationRuntime:
         quickcut_renderer,
         engine,
     )
+    # 工具 01/02/03 共享工作文件夹：任一工具选定路径，其余工具同步，
+    # 切换工具无需重选；工具 04（关键词快切）是多文件夹项目制，不参与同步。
+    bind_shared_folder([rename_view_model, cleanup_view_model, xmp_sync_view_model])
     register_qml_initial_properties(
         engine,
         application_info,

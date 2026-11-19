@@ -18,6 +18,7 @@ from xuying_toolbox.presentation.viewmodels.folder_selection import (
 
 class XmpSyncViewModel(QObject):
     stateChanged = Signal()
+    folderChanged = Signal(str)
     progressChanged = Signal(int, int, str)
     confirmationRequested = Signal(str, str)
     notificationRequested = Signal(str, str)
@@ -69,6 +70,8 @@ class XmpSyncViewModel(QObject):
             return
         self._folder_path = normalized
         self._invalidate_preview("可以开始只读检查 XMP 标记" if normalized else "请选择照片文件夹")
+        # 通知共享文件夹同步器：其他工具页保持同一路径（用户切换工具无需重选）。
+        self.folderChanged.emit(normalized)
 
     @Property(str, notify=stateChanged)
     def direction(self) -> str:
